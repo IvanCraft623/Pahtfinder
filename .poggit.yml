@@ -5,6 +5,7 @@ branches:
 projects:
   languages:
     path: ""
+    lint: false
     model: virion
     type: library
 ...
