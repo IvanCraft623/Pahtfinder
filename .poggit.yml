@@ -1,0 +1,10 @@
+--- # Poggit-CI Manifest. Open the CI at https://poggit.pmmp.io/ci/IvanCraft623/Pathfinder
+build-by-default: true
+branches:
+- main
+projects:
+  languages:
+    path: ""
+    model: virion
+    type: library
+...

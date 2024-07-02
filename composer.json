@@ -1,0 +1,16 @@
+{
+    "name": "ivancraft623/pathfinder",
+    "description": "Pathfinder library for PocketMine-MP.",
+    "type": "project",
+    "license": "Apache-2.0",
+    "require-dev": {
+        "php": "^8.0",
+        "pocketmine/pocketmine-mp": "^5.0.0",
+        "phpstan/phpstan": "1.10.21"
+    },
+    "autoload": {
+        "psr-0": {
+            "IvanCraft623\\Pathfinder\\": "src"
+        }
+    }
+}
