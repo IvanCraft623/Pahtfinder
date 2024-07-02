@@ -1,15 +1,33 @@
 <?php
 
+/*
+ *  _____      _   _      __ _           _
+ * |  __ \    | | | |    / _(_)         | |
+ * | |__) |_ _| |_| |__ | |_ _ _ __   __| | ___ _ __
+ * |  ___/ _` | __| '_ \|  _| | '_ \ / _` |/ _ \ '__|
+ * | |  | (_| | |_| | | | | | | | | | (_| |  __/ |
+ * |_|   \__,_|\__|_| |_|_| |_|_| |_|\__,_|\___|_|
+ *
+ * A PocketMine-MP virion that implements a mob-oriented pathfinding.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * @author IvanCraft623
+ */
+
 declare(strict_types=1);
 
 namespace IvanCraft623\Pathfinder\task;
 
 use Closure;
 
-use IvanCraft623\Pathfinder\world\AsyncBlockGetter;
 use IvanCraft623\Pathfinder\evaluator\NodeEvaluator;
-use IvanCraft623\Pathfinder\PathFinder;
 use IvanCraft623\Pathfinder\Path;
+use IvanCraft623\Pathfinder\PathFinder;
+use IvanCraft623\Pathfinder\world\AsyncBlockGetter;
 
 use pmmp\thread\ThreadSafeArray;
 use pocketmine\math\Vector3;
@@ -17,6 +35,7 @@ use pocketmine\scheduler\AsyncTask;
 use pocketmine\Server;
 use pocketmine\world\format\io\FastChunkSerializer;
 use pocketmine\world\World;
+use function igbinary_unserialize;
 
 class AsyncPathFinderTask extends AsyncTask {
 
@@ -26,7 +45,7 @@ class AsyncPathFinderTask extends AsyncTask {
 
 	/**
 	 * @phpstan-param ThreadSafeArray<int, string> $defaultChunks
-	 * @phpstan-param \Closure(Path $path) : void $onCompletion
+	 * @phpstan-param Closure(Path $path) : void $onCompletion
 	 */
 	public function __construct(
 		private string $nodeEvaluator,
@@ -44,7 +63,7 @@ class AsyncPathFinderTask extends AsyncTask {
 		$this->storeLocal(self::TLS_KEY_COMPLETION_CALLBACK, $onCompletion);
 	}
 
-	public function onRun(): void{
+	public function onRun() : void{
 		/** @var NodeEvaluator */
 		$evaluator = igbinary_unserialize($this->nodeEvaluator);
 		$blockGetter = new AsyncBlockGetter($this, $this->worldMinY, $this->worldMaxY);
@@ -71,7 +90,7 @@ class AsyncPathFinderTask extends AsyncTask {
 		));
 	}
 
-	public function onProgressUpdate($progress): void{
+	public function onProgressUpdate($progress) : void{
 		$world = Server::getInstance()->getWorldManager()->getWorld($this->worldId);
 
 		if($world === null) {
@@ -88,7 +107,7 @@ class AsyncPathFinderTask extends AsyncTask {
 		}
 	}
 
-	public function onCompletion(): void{
+	public function onCompletion() : void{
 		/** @var Closure $callback */
 		$callback = $this->fetchLocal(self::TLS_KEY_COMPLETION_CALLBACK);
 		($callback)($this->getResult());

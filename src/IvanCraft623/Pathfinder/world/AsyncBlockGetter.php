@@ -1,20 +1,19 @@
 <?php
 
 /*
- *   __  __       _     _____  _             _
- *  |  \/  |     | |   |  __ \| |           (_)
- *  | \  / | ___ | |__ | |__) | |_   _  __ _ _ _ __
- *  | |\/| |/ _ \| '_ \|  ___/| | | | |/ _` | | '_ \
- *  | |  | | (_) | |_) | |    | | |_| | (_| | | | | |
- *  |_|  |_|\___/|_.__/|_|    |_|\__,_|\__, |_|_| |_|
- *                                      __/ |
- *                                     |___/
+ *  _____      _   _      __ _           _
+ * |  __ \    | | | |    / _(_)         | |
+ * | |__) |_ _| |_| |__ | |_ _ _ __   __| | ___ _ __
+ * |  ___/ _` | __| '_ \|  _| | '_ \ / _` |/ _ \ '__|
+ * | |  | (_| | |_| | | | | | | | | | (_| |  __/ |
+ * |_|   \__,_|\__|_| |_|_| |_|_| |_|\__,_|\___|_|
  *
- * A PocketMine-MP plugin that implements mobs AI.
+ * A PocketMine-MP virion that implements a mob-oriented pathfinding.
  *
  * This program is free software: you can redistribute it and/or modify
- * it under the terms of the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
+ * it under the terms of the GNU Lesser General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
  *
  * @author IvanCraft623
  */
@@ -25,19 +24,19 @@ namespace IvanCraft623\Pathfinder\world;
 
 use IvanCraft623\Pathfinder\task\AsyncPathFinderTask;
 
-use pocketmine\server\Server;
 use pocketmine\block\Block;
 use pocketmine\block\Door;
+use pocketmine\block\RuntimeBlockStateRegistry;
+use pocketmine\block\VanillaBlocks;
+use pocketmine\math\Facing;
+use pocketmine\math\Vector3;
+use pocketmine\world\format\Chunk;
+use pocketmine\world\format\io\FastChunkSerializer;
 use pocketmine\world\Position;
 use pocketmine\world\World;
-use pocketmine\world\format\Chunk;
-use pocketmine\block\VanillaBlocks;
-use pocketmine\block\RuntimeBlockStateRegistry;
-use pocketmine\world\format\io\FastChunkSerializer;
-use pocketmine\math\Vector3;
-use pocketmine\math\Facing;
 
 use ReflectionProperty;
+use function array_key_exists;
 
 /**
  * @phpstan-import-type ChunkPosHash from World
@@ -102,7 +101,7 @@ class AsyncBlockGetter extends BlockGetter{
 		return $block;
 	}
 
-	protected function getChunkAt(int $x, int $z): ?Chunk {
+	protected function getChunkAt(int $x, int $z) : ?Chunk {
 		$chunkX = $x >> Chunk::COORD_BIT_SIZE;
 		$chunkZ = $z >> Chunk::COORD_BIT_SIZE;
 		$hash = World::chunkHash($chunkX, $chunkZ);
@@ -130,7 +129,7 @@ class AsyncBlockGetter extends BlockGetter{
 		return $this->chunks[$hash] ?? null;
 	}
 
-	public function setChunk(int $chunkX, int $chunkZ, Chunk $chunk): void {
+	public function setChunk(int $chunkX, int $chunkZ, Chunk $chunk) : void {
 		$this->chunks[World::chunkHash($chunkX, $chunkZ)] = $chunk;
 	}
 
@@ -145,7 +144,7 @@ class AsyncBlockGetter extends BlockGetter{
 	 * Called when the block is created
 	 *
 	 * Replacement of {@link Block::readStateFromWorld()}, because that function cannot be executed
-	 * since the World class is unavailable. 
+	 * since the World class is unavailable.
 	 *
 	 * A replacement block may be returned. This only is useful if the block type changed due to reading
 	 * others blocks data.
@@ -169,8 +168,6 @@ class AsyncBlockGetter extends BlockGetter{
 
 	/**
 	 * Returns the Block on the side $side, works like Vector3::getSide()
-	 *
-	 * @return Block
 	 */
 	public function getBlockAtSide(Vector3 $position, int $side, int $step = 1) : Block{
 		[$dx, $dy, $dz] = Facing::OFFSET[$side] ?? [0, 0, 0];

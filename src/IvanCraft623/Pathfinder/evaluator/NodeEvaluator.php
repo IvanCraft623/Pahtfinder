@@ -1,20 +1,19 @@
 <?php
 
 /*
- *   __  __       _     _____  _             _
- *  |  \/  |     | |   |  __ \| |           (_)
- *  | \  / | ___ | |__ | |__) | |_   _  __ _ _ _ __
- *  | |\/| |/ _ \| '_ \|  ___/| | | | |/ _` | | '_ \
- *  | |  | | (_) | |_) | |    | | |_| | (_| | | | | |
- *  |_|  |_|\___/|_.__/|_|    |_|\__,_|\__, |_|_| |_|
- *                                      __/ |
- *                                     |___/
+ *  _____      _   _      __ _           _
+ * |  __ \    | | | |    / _(_)         | |
+ * | |__) |_ _| |_| |__ | |_ _ _ __   __| | ___ _ __
+ * |  ___/ _` | __| '_ \|  _| | '_ \ / _` |/ _ \ '__|
+ * | |  | (_| | |_| | | | | | | | | | (_| |  __/ |
+ * |_|   \__,_|\__|_| |_|_| |_|_| |_|\__,_|\___|_|
  *
- * A PocketMine-MP plugin that implements mobs AI.
+ * A PocketMine-MP virion that implements a mob-oriented pathfinding.
  *
  * This program is free software: you can redistribute it and/or modify
- * it under the terms of the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
+ * it under the terms of the GNU Lesser General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
  *
  * @author IvanCraft623
  */
@@ -23,8 +22,8 @@ declare(strict_types=1);
 
 namespace IvanCraft623\Pathfinder\evaluator;
 
-use IvanCraft623\Pathfinder\BlockPathTypeCostMap;
 use IvanCraft623\Pathfinder\BlockPathType;
+use IvanCraft623\Pathfinder\BlockPathTypeCostMap;
 use IvanCraft623\Pathfinder\Node;
 use IvanCraft623\Pathfinder\Target;
 use IvanCraft623\Pathfinder\world\BlockGetter;
