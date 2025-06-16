@@ -81,6 +81,13 @@ class Path{
 		$this->nodes[$index] = $node;
 	}
 
+	/**
+	 * @return Node[]
+	 */
+	public function getNodes() : array{
+		return $this->nodes;
+	}
+
 	public function getNodeCount() : int{
 		return count($this->nodes);
 	}
