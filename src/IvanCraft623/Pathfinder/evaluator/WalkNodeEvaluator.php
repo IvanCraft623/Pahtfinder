@@ -408,7 +408,7 @@ class WalkNodeEvaluator extends EntityNodeEvaluator {
 		$canPassDoors = $this->canPassDoors();
 		if ($pathType->equals(BlockPathType::DOOR_WOOD_CLOSED) && $this->canOpenDoors() && $canPassDoors) {
 			$pathType = BlockPathType::WALKABLE_DOOR;
-		} elseif ($pathType->equals(BlockPathType::DOOR_OPEN) && $canPassDoors) {
+		} elseif ($pathType->equals(BlockPathType::DOOR_OPEN) && !$canPassDoors) {
 			$pathType = BlockPathType::BLOCKED;
 		} elseif ($pathType->equals(BlockPathType::RAIL) &&
 			!($blockGetter->getBlock($mobPos) instanceof BaseRail) &&
@@ -570,7 +570,7 @@ class WalkNodeEvaluator extends EntityNodeEvaluator {
 				return BlockPathType::FENCE;
 
 			case ($block instanceof FenceGate):
-				return $block->isOpen() ? BlockPathType::OPEN : BlockPathType::BLOCKED;
+				return $block->isOpen() ? BlockPathType::OPEN : BlockPathType::FENCE;
 
 			default:
 				break;
