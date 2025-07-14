@@ -12,5 +12,11 @@
         "psr-0": {
             "IvanCraft623\\Pathfinder\\": "src"
         }
+    },
+    "extra": {
+        "virion": {
+            "spec": "3.0",
+            "namespace-root": "IvanCraft623\\Pathfinder"
+        }
     }
 }
