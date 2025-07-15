@@ -2,7 +2,7 @@
     "name": "ivancraft623/pathfinder",
     "description": "Pathfinder library for PocketMine-MP.",
     "type": "project",
-    "license": "Apache-2.0",
+    "license": "GPL-3.0",
     "require-dev": {
         "php": "^8.0",
         "pocketmine/pocketmine-mp": "^5.0.0",
