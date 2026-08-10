@@ -137,9 +137,7 @@ class AsyncBlockGetter extends BlockGetter{
 
 	private function positionBlock(Block $block, Position $position) : void{
 		$property = new ReflectionProperty($block, "position");
-		$property->setAccessible(true);
 		$property->setValue($block, $position);
-		$property->setAccessible(false);
 	}
 
 	/**
