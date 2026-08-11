@@ -5,7 +5,7 @@
     "license": "GPL-3.0",
     "require-dev": {
         "php": "^8.1",
-        "pocketmine/pocketmine-mp": "^5.0.0",
+        "pocketmine/pocketmine-mp": "^5.30.0",
         "phpstan/phpstan": "1.10.21"
     },
     "autoload": {
