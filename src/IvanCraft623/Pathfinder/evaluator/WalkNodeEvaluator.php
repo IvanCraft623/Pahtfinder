@@ -33,6 +33,7 @@ use IvanCraft623\Pathfinder\world\BlockGetter;
 use pocketmine\block\BaseRail;
 use pocketmine\block\Block;
 use pocketmine\block\BlockTypeIds;
+use pocketmine\block\Campfire;
 use pocketmine\block\Door;
 use pocketmine\block\Fence;
 use pocketmine\block\FenceGate;
@@ -555,7 +556,7 @@ class WalkNodeEvaluator extends EntityNodeEvaluator {
 
 			case ($block instanceof Trapdoor):
 			case ($blockId === BlockTypeIds::LILY_PAD):
-			//TODO: big dripleaf
+			case ($blockId === BlockTypeIds::BIG_DRIPLEAF_HEAD):
 				return BlockPathType::TRAPDOOR;
 
 			//TODO: powder snow
@@ -608,9 +609,9 @@ class WalkNodeEvaluator extends EntityNodeEvaluator {
 		$blockId = $block->getTypeId();
 
 		return $blockId === BlockTypeIds::FIRE ||
+			($block instanceof Campfire && $block->isLit()) ||
 			$block instanceof Lava ||
 			$blockId === BlockTypeIds::MAGMA ||
 			$blockId === BlockTypeIds::LAVA_CAULDRON;
-			//TODO: lit camfire
 	}
 }

@@ -47,9 +47,9 @@ class Utils {
 			case BlockTypeIds::ANVIL:
 			case BlockTypeIds::BREWING_STAND:
 			case BlockTypeIds::DRAGON_EGG:
-			//TODO: respawn anchor
+			case BlockTypeIds::RESPAWN_ANCHOR:
 			case BlockTypeIds::END_ROD:
-			//TODO: lightning rod
+			case BlockTypeIds::LIGHTNING_ROD:
 			//TODO: piston arm
 				return false;
 
