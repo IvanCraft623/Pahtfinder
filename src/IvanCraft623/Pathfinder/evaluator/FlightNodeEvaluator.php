@@ -94,12 +94,16 @@ class FlightNodeEvaluator extends WalkNodeEvaluator {
 	public function getNeighbors(Node $node) : array{
 		$nodes = [];
 
+		$nodeX = $node->x();
+		$nodeY = $node->y();
+		$nodeZ = $node->z();
+
 		// 6 cardinal directions: ±X, ±Y, ±Z
 		/** @var array<int, ?Node> $cardinals Facing::* => Node|null */
 		$cardinals = [];
 		foreach (Facing::ALL as $side) {
-			$neighborPos = $node->getSide($side);
-			$cardinal = $this->findAcceptedNode((int) $neighborPos->x, (int) $neighborPos->y, (int) $neighborPos->z);
+			[$dx, $dy, $dz] = Facing::OFFSET[$side];
+			$cardinal = $this->findAcceptedNode($nodeX + $dx, $nodeY + $dy, $nodeZ + $dz);
 			if ($cardinal !== null && !$cardinal->closed) {
 				$nodes[] = $cardinal;
 			}
@@ -109,13 +113,14 @@ class FlightNodeEvaluator extends WalkNodeEvaluator {
 		/** @var array<int, array<int, ?Node>> $yEdges yFace => (hFace => Node|null) */
 		$yEdges = [];
 		foreach ([Facing::UP, Facing::DOWN] as $yFace) {
+			[$oyx, $oyy, $oyz] = Facing::OFFSET[$yFace];
 			$yEdges[$yFace] = [];
 			foreach (Facing::HORIZONTAL as $hFace) {
 				$cY = $cardinals[$yFace];
 				$cH = $cardinals[$hFace];
 				if ($cY !== null && $cY->costMalus >= 0 && $cH !== null && $cH->costMalus >= 0) {
-					$edgePos = $node->getSide($yFace)->getSide($hFace);
-					$edge = $this->findAcceptedNode((int) $edgePos->x, (int) $edgePos->y, (int) $edgePos->z);
+					[$ohx, $ohy, $ohz] = Facing::OFFSET[$hFace];
+					$edge = $this->findAcceptedNode($nodeX + $oyx + $ohx, $nodeY + $oyy + $ohy, $nodeZ + $oyz + $ohz);
 					if ($edge !== null && !$edge->closed) {
 						$nodes[] = $edge;
 					}
@@ -129,13 +134,14 @@ class FlightNodeEvaluator extends WalkNodeEvaluator {
 		/** @var array<int, array<int, ?Node>> $hEdges zFace => (xFace => Node|null) */
 		$hEdges = [];
 		foreach ([Facing::NORTH, Facing::SOUTH] as $zFace) {
+			[$ozx, $ozy, $ozz] = Facing::OFFSET[$zFace];
 			$hEdges[$zFace] = [];
 			foreach ([Facing::WEST, Facing::EAST] as $xFace) {
 				$cZ = $cardinals[$zFace];
 				$cX = $cardinals[$xFace];
 				if ($cZ !== null && $cZ->costMalus >= 0 && $cX !== null && $cX->costMalus >= 0) {
-					$edgePos = $node->getSide($zFace)->getSide($xFace);
-					$edge = $this->findAcceptedNode((int) $edgePos->x, (int) $edgePos->y, (int) $edgePos->z);
+					[$oxx, $oxy, $oxz] = Facing::OFFSET[$xFace];
+					$edge = $this->findAcceptedNode($nodeX + $ozx + $oxx, $nodeY + $ozy + $oxy, $nodeZ + $ozz + $oxz);
 					if ($edge !== null && !$edge->closed) {
 						$nodes[] = $edge;
 					}
@@ -150,8 +156,11 @@ class FlightNodeEvaluator extends WalkNodeEvaluator {
 		// Guard: the horizontal edge + both horizontal cardinals + the Y cardinal
 		//        + the two Y-axis edges that share those components must all have costMalus >= 0.
 		foreach ([Facing::UP, Facing::DOWN] as $yFace) {
+			[$oyx, $oyy, $oyz] = Facing::OFFSET[$yFace];
 			foreach ([Facing::NORTH, Facing::SOUTH] as $zFace) {
+				[$ozx, $ozy, $ozz] = Facing::OFFSET[$zFace];
 				foreach ([Facing::WEST, Facing::EAST] as $xFace) {
+					[$oxx, $oxy, $oxz] = Facing::OFFSET[$xFace];
 					$hEdge = $hEdges[$zFace][$xFace];
 					$yEdgeZ = $yEdges[$yFace][$zFace];
 					$yEdgeX = $yEdges[$yFace][$xFace];
@@ -165,8 +174,11 @@ class FlightNodeEvaluator extends WalkNodeEvaluator {
 						$yEdgeZ !== null && $yEdgeZ->costMalus >= 0 &&
 						$yEdgeX !== null && $yEdgeX->costMalus >= 0
 					) {
-						$cornerPos = $node->getSide($yFace)->getSide($zFace)->getSide($xFace);
-						$corner = $this->findAcceptedNode((int) $cornerPos->x, (int) $cornerPos->y, (int) $cornerPos->z);
+						$corner = $this->findAcceptedNode(
+							$nodeX + $oyx + $ozx + $oxx,
+							$nodeY + $oyy + $ozy + $oxy,
+							$nodeZ + $oyz + $ozz + $oxz
+						);
 						if ($corner !== null && !$corner->closed) {
 							$nodes[] = $corner;
 						}
@@ -210,10 +222,10 @@ class FlightNodeEvaluator extends WalkNodeEvaluator {
 	}
 
 	public function getBlockPathTypeAt(BlockGetter $blockGetter, int $x, int $y, int $z) : BlockPathType{
-		/**
-		 * @var EnumSet<BlockPathType>
-		 */
-		$pathTypes = new EnumSet(BlockPathType::class);
+		$this->pathTypes ??= new EnumSet(BlockPathType::class);
+		/** @var EnumSet<BlockPathType> $pathTypes */
+		$pathTypes = $this->pathTypes;
+		$pathTypes->clear();
 		$currentPathType = $this->getBlockPathTypes($blockGetter, $x, $y, $z, $pathTypes, BlockPathType::BLOCKED, $this->startPosition->floor());
 
 		if ($pathTypes->contains(BlockPathType::FENCE)) {
@@ -221,18 +233,21 @@ class FlightNodeEvaluator extends WalkNodeEvaluator {
 		}
 
 		$bestPathType = BlockPathType::BLOCKED;
+		$bestMalus = $this->pathTypeCostMap->getPathfindingMalus($bestPathType);
 		foreach ($pathTypes as $pathType) {
-			if ($this->pathTypeCostMap->getPathfindingMalus($pathType) < 0) {
+			$malus = $this->pathTypeCostMap->getPathfindingMalus($pathType);
+			if ($malus < 0) {
 				return $pathType;
 			}
 
-			if ($this->pathTypeCostMap->getPathfindingMalus($pathType) >= $this->pathTypeCostMap->getPathfindingMalus($bestPathType)) {
+			if ($malus >= $bestMalus) {
 				$bestPathType = $pathType;
+				$bestMalus = $malus;
 			}
 		}
 
 		return ($currentPathType->equals(BlockPathType::OPEN) &&
-			$this->pathTypeCostMap->getPathfindingMalus($bestPathType) === 0.0) ? BlockPathType::OPEN : $bestPathType;
+			$bestMalus === 0.0) ? BlockPathType::OPEN : $bestPathType;
 	}
 
 	public function getBlockPathType(BlockGetter $blockGetter, int $x, int $y, int $z) : BlockPathType{

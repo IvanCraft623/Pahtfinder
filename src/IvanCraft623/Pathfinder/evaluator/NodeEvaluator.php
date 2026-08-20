@@ -26,6 +26,7 @@ use IvanCraft623\Pathfinder\BlockPathType;
 use IvanCraft623\Pathfinder\BlockPathTypeCostMap;
 use IvanCraft623\Pathfinder\Node;
 use IvanCraft623\Pathfinder\Target;
+use IvanCraft623\Pathfinder\utils\EnumSet;
 use IvanCraft623\Pathfinder\world\BlockGetter;
 
 use pocketmine\math\Vector3;
@@ -45,6 +46,9 @@ abstract class NodeEvaluator {
 
 	/** @var array<BlockPosHash, Node> */
 	protected array $nodes = [];
+
+	/** @var EnumSet<BlockPathType>|null */
+	protected ?EnumSet $pathTypes = null;
 
 	public function __construct(?BlockPathTypeCostMap $pathTypeCostMap = null) {
 		$this->pathTypeCostMap = $pathTypeCostMap ?? new BlockPathTypeCostMap(); //empty one

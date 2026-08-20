@@ -124,7 +124,7 @@ class PathFinder {
 		$openSet = new BinaryHeap();
 
 		$startNode->g = 0.0;
-		$startNode->h = static::getBestH($startNode, [$target]);
+		$startNode->h = self::getBestHFor($startNode, $target);
 		$startNode->f = $startNode->h;
 
 		$openSet->insert($startNode);
@@ -156,7 +156,7 @@ class PathFinder {
 					if ($neighbor->walkedDistance < $maxDistanceFromStart && (!$neighbor->inOpenSet() || $newNeighborG < $neighbor->g)) {
 						$neighbor->cameFrom = $current;
 						$neighbor->g = $newNeighborG;
-						$neighbor->h = static::getBestH($neighbor, [$target]) * self::FUDGING;
+						$neighbor->h = self::getBestHFor($neighbor, $target) * self::FUDGING;
 
 						if ($neighbor->inOpenSet()) {
 							$openSet->changeCost($neighbor, $neighbor->g + $neighbor->h);
@@ -178,15 +178,20 @@ class PathFinder {
 	public static function getBestH(Node $node, array $targets) : float{
 		$bestH = INF;
 		foreach ($targets as $target) {
-			$h = $node->distance($target);
-			$target->updateBest($h, $node);
-
-			if ($h < $bestH) {
-				$bestH = $h;
-			}
+			$bestH = min($bestH, self::getBestHFor($node, $target));
 		}
 
 		return $bestH;
+	}
+
+	/**
+	 * Single-target heuristic; avoids the array allocation in {@link getBestH()}.
+	 */
+	private static function getBestHFor(Node $node, Target $target) : float{
+		$h = $node->distance($target);
+		$target->updateBest($h, $node);
+
+		return $h;
 	}
 
 	private static function reconstructPath(Node $startNode, Vector3 $target, bool $reached) : Path{

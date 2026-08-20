@@ -33,6 +33,8 @@ class Path{
 	/** @var Node[] */
 	private array $nodes;
 
+	private int $nodeCount;
+
 	private int $nextNodeIndex = 0;
 
 	private Vector3 $target;
@@ -46,8 +48,9 @@ class Path{
 	 */
 	public function __construct(array $nodes, Vector3 $target, bool $reached){
 		$this->nodes = $nodes;
+		$this->nodeCount = count($nodes);
 		$this->target = $target;
-		$this->distToTarget = count($nodes) === 0 ? INF : $nodes[count($nodes) - 1]->distanceManhattan($target);
+		$this->distToTarget = $this->nodeCount === 0 ? INF : $nodes[$this->nodeCount - 1]->distanceManhattan($target);
 		$this->reached = $reached;
 	}
 
@@ -60,11 +63,11 @@ class Path{
 	}
 
 	public function isDone() : bool{
-		return $this->nextNodeIndex >= count($this->nodes);
+		return $this->nextNodeIndex >= $this->nodeCount;
 	}
 
 	public function getEndNode() : ?Node{
-		return count($this->nodes) !== 0 ? $this->nodes[count($this->nodes) - 1] : null;
+		return $this->nodeCount !== 0 ? $this->nodes[$this->nodeCount - 1] : null;
 	}
 
 	public function getNode(int $index) : Node{
@@ -72,8 +75,9 @@ class Path{
 	}
 
 	public function truncateNodes(int $length) : void{
-		if(count($this->nodes) > $length){
+		if($this->nodeCount > $length){
 			array_splice($this->nodes, $length);
+			$this->nodeCount = $length;
 		}
 	}
 
@@ -89,7 +93,7 @@ class Path{
 	}
 
 	public function getNodeCount() : int{
-		return count($this->nodes);
+		return $this->nodeCount;
 	}
 
 	public function getNextNodeIndex() : int{
@@ -129,7 +133,7 @@ class Path{
 	}
 
 	public function equals(Path $other) : bool{
-		if (count($this->nodes) !== count($other->nodes)) {
+		if ($this->nodeCount !== $other->nodeCount) {
 			return false;
 		}
 		foreach ($this->nodes as $index => $node) {

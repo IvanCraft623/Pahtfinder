@@ -51,9 +51,13 @@ class BinaryHeap {
 	}
 
 	/**
-	 * Clears the heap.
+	 * Clears the heap, releasing all node references.
 	 */
 	public function clear() : void {
+		foreach ($this->heap as $node) {
+			$node->heapIdx = -1;
+		}
+		$this->heap = [];
 		$this->size = 0;
 	}
 

@@ -134,10 +134,14 @@ class WalkNodeEvaluator extends EntityNodeEvaluator {
 		$nodes = [];
 		$maxUpStep = 0;
 
-		$pathType = $this->getCachedBlockPathType($this->blockGetter, $node->x(), $node->y(), $node->z());
-		$aboveY = $node->y() + 1;
-		$pathTypeAbove = $this->blockGetter->isInWorld($node->x(), $aboveY, $node->z())
-			? $this->getCachedBlockPathType($this->blockGetter, $node->x(), $aboveY, $node->z())
+		$nodeX = $node->x();
+		$nodeY = $node->y();
+		$nodeZ = $node->z();
+
+		$pathType = $this->getCachedBlockPathType($this->blockGetter, $nodeX, $nodeY, $nodeZ);
+		$aboveY = $nodeY + 1;
+		$pathTypeAbove = $this->blockGetter->isInWorld($nodeX, $aboveY, $nodeZ)
+			? $this->getCachedBlockPathType($this->blockGetter, $nodeX, $aboveY, $nodeZ)
 			: BlockPathType::BLOCKED;
 
 		if ($this->pathTypeCostMap->getPathfindingMalus($pathTypeAbove) >= 0 && !$pathType->equals(BlockPathType::STICKY_HONEY)) {
@@ -151,8 +155,8 @@ class WalkNodeEvaluator extends EntityNodeEvaluator {
 		 */
 		$horizontalNeighbors = [];
 		foreach (Facing::HORIZONTAL as $side) {
-			$neighborPos = $node->getSide($side);
-			$neighborNode = $this->findAcceptedNode((int) $neighborPos->x, (int) $neighborPos->y, (int) $neighborPos->z, $maxUpStep, $floorLevel, $side, $pathType);
+			[$dx, $dy, $dz] = Facing::OFFSET[$side];
+			$neighborNode = $this->findAcceptedNode($nodeX + $dx, $nodeY + $dy, $nodeZ + $dz, $maxUpStep, $floorLevel, $side, $pathType);
 
 			$horizontalNeighbors[$side] = $neighborNode;
 			if ($neighborNode !== null && $this->isNeighborValid($neighborNode, $node)) {
@@ -162,10 +166,10 @@ class WalkNodeEvaluator extends EntityNodeEvaluator {
 
 		// Iterate diagonals
 		foreach ([Facing::NORTH, Facing::SOUTH] as $zFace) {
-			$zFacePos = $node->getSide($zFace);
+			[$dxz, $dyz, $dzz] = Facing::OFFSET[$zFace];
 			foreach ([Facing::WEST, Facing::EAST] as $xFace) {
-				$diagonalPos = $zFacePos->getSide($xFace);
-				$diagonalNode = $this->findAcceptedNode((int) $diagonalPos->x, (int) $diagonalPos->y, (int) $diagonalPos->z, $maxUpStep, $floorLevel, $zFace, $pathType);
+				[$dxx, $dyx, $dzx] = Facing::OFFSET[$xFace];
+				$diagonalNode = $this->findAcceptedNode($nodeX + $dxz + $dxx, $nodeY + $dyz + $dyx, $nodeZ + $dzz + $dzx, $maxUpStep, $floorLevel, $zFace, $pathType);
 
 				if ($diagonalNode !== null && $this->isDiagonalValid($node, $horizontalNeighbors[$xFace], $horizontalNeighbors[$zFace], $diagonalNode)) {
 					$nodes[] = $diagonalNode;
@@ -293,10 +297,11 @@ class WalkNodeEvaluator extends EntityNodeEvaluator {
 					($resultNode->type->equals(BlockPathType::OPEN) || $resultNode->type->equals(BlockPathType::WALKABLE))
 				) {
 					$halfWidth = $width / 2;
-					$sidePos = $pos->getSide($facing)->add(0.5, 0, 0.5);
+					[$dx, $dy, $dz] = Facing::OFFSET[$facing];
+					$sidePos = new Vector3($x + $dx + 0.5, $y + $dy, $z + $dz + 0.5);
 					$y1 = $this->getFloorLevel(new Vector3($sidePos->x, $y + 1, $sidePos->z));
 					$y2 = $this->getFloorLevel(new Vector3($resultNode->x, $resultNode->y, $resultNode->z));
-					$originSidePos = $pos->add(0.5, 0, 0.5);
+					$originSidePos = new Vector3($x + 0.5, $y, $z + 0.5);
 					$bb = new AxisAlignedBB(
 						minX: min($sidePos->x, $originSidePos->x) - $halfWidth,
 						minY: min($y1, $y2) + 0.001,
@@ -450,10 +455,10 @@ class WalkNodeEvaluator extends EntityNodeEvaluator {
 	}
 
 	public function getBlockPathTypeAt(BlockGetter $blockGetter, int $x, int $y, int $z) : BlockPathType{
-		/**
-		 * @var EnumSet<BlockPathType>
-		 */
-		$pathTypes = new EnumSet(BlockPathType::class);
+		$this->pathTypes ??= new EnumSet(BlockPathType::class);
+		/** @var EnumSet<BlockPathType> $pathTypes */
+		$pathTypes = $this->pathTypes;
+		$pathTypes->clear();
 		$currentPathType = $this->getBlockPathTypes($blockGetter, $x, $y, $z, $pathTypes, BlockPathType::BLOCKED, $this->startPosition->floor());
 
 		foreach ([BlockPathType::FENCE, BlockPathType::UNPASSABLE_RAIL] as $unpassableType) {
@@ -463,18 +468,21 @@ class WalkNodeEvaluator extends EntityNodeEvaluator {
 		}
 
 		$bestPathType = BlockPathType::BLOCKED;
+		$bestMalus = $this->pathTypeCostMap->getPathfindingMalus($bestPathType);
 		foreach ($pathTypes as $pathType) {
-			if ($this->pathTypeCostMap->getPathfindingMalus($pathType) < 0) {
+			$malus = $this->pathTypeCostMap->getPathfindingMalus($pathType);
+			if ($malus < 0) {
 				return $pathType;
 			}
 
-			if ($this->pathTypeCostMap->getPathfindingMalus($pathType) >= $this->pathTypeCostMap->getPathfindingMalus($bestPathType)) {
+			if ($malus >= $bestMalus) {
 				$bestPathType = $pathType;
+				$bestMalus = $malus;
 			}
 		}
 
 		return ($currentPathType->equals(BlockPathType::OPEN) &&
-			$this->pathTypeCostMap->getPathfindingMalus($bestPathType) === 0.0 &&
+			$bestMalus === 0.0 &&
 			$this->entityWidth <= 1) ? BlockPathType::OPEN : $bestPathType;
 	}
 
