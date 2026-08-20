@@ -41,17 +41,17 @@ class Path{
 
 	private float $distToTarget;
 
-	private bool $reached;
+	private PathResult $result;
 
 	/**
 	 * @param Node[] $nodes
 	 */
-	public function __construct(array $nodes, Vector3 $target, bool $reached){
+	public function __construct(array $nodes, Vector3 $target, PathResult $result){
 		$this->nodes = $nodes;
 		$this->nodeCount = count($nodes);
 		$this->target = $target;
 		$this->distToTarget = $this->nodeCount === 0 ? INF : $nodes[$this->nodeCount - 1]->distanceManhattan($target);
-		$this->reached = $reached;
+		$this->result = $result;
 	}
 
 	public function advance() : void{
@@ -144,8 +144,12 @@ class Path{
 		return true;
 	}
 
+	public function getPathResult() : PathResult{
+		return $this->result;
+	}
+
 	public function canReach() : bool{
-		return $this->reached;
+		return $this->result === PathResult::REACHED;
 	}
 
 	public function getTarget() : Vector3{

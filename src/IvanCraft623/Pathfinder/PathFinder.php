@@ -55,7 +55,7 @@ class PathFinder {
 	 * @param float   $maxDistanceFromStart Maximum distance at which to search for a path.
 	 * @param int     $reachRange           Distance which the entity can interact with a node.
 	 *
-	 * @return Path Resulting path, or null if no path could be found.
+	 * @return Path Resulting path. Check {@link Path::getPathResult()} to know how the search ended.
 	 */
 	public static function findPath(NodeEvaluator $evaluator, World $world, Vector3 $position, Vector3 $target, int $maxVisitedNodes, float $maxDistanceFromStart, int $reachRange = 1) : Path {
 		$evaluator->prepare(new SyncBlockGetter($world), $position);
@@ -133,8 +133,12 @@ class PathFinder {
 
 		$maxDistanceFromStartSqr = $maxDistanceFromStart ** 2;
 
+		$result = PathResult::BLOCKED;
+
 		while (!$openSet->isEmpty()) {
 			if (++$visitedNodes >= $maxVisitedNodes) {
+				$result = PathResult::EXHAUSTED;
+
 				break;
 			}
 
@@ -143,6 +147,7 @@ class PathFinder {
 
 			if ($current->distanceManhattan($target) <= $reachRange) {
 				$target->setReached();
+				$result = PathResult::REACHED;
 
 				break;
 			}
@@ -169,7 +174,7 @@ class PathFinder {
 			}
 		}
 
-		return self::reconstructPath($target->getBestNode(), $target->asVector3(), $target->reached());
+		return self::reconstructPath($target->getBestNode(), $target->asVector3(), $result);
 	}
 
 	/**
@@ -194,7 +199,7 @@ class PathFinder {
 		return $h;
 	}
 
-	private static function reconstructPath(Node $startNode, Vector3 $target, bool $reached) : Path{
+	private static function reconstructPath(Node $startNode, Vector3 $target, PathResult $result) : Path{
 		/** @var Node[] $nodes */
 		$nodes = [];
 		$currentNode = $startNode;
@@ -206,6 +211,6 @@ class PathFinder {
 			$nodes[] = $from;
 		}
 
-		return new Path(array_reverse($nodes), $target, $reached);
+		return new Path(array_reverse($nodes), $target, $result);
 	}
 }
