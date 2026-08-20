@@ -1,2 +1,13 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+*.php text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.neon text eol=lf
+*.lock text eol=lf
+
+# IDE configs
+.editorconfig text eol=lf
+.idea/** text eol=lf
+.vscode/** text eol=lf
