@@ -156,6 +156,7 @@ use IvanCraft623\Pathfinder\Node;
 use IvanCraft623\Pathfinder\Target;
 use IvanCraft623\Pathfinder\evaluator\NodeEvaluator;
 use IvanCraft623\Pathfinder\world\BlockGetter;
+use pocketmine\math\Facing;
 use function floor;
 
 final class SimpleWalkEvaluator extends NodeEvaluator {
@@ -178,7 +179,8 @@ final class SimpleWalkEvaluator extends NodeEvaluator {
 	public function getNeighbors(Node $node) : array{
 		$neighbors = [];
 
-		foreach ([[-1, 0, 0], [1, 0, 0], [0, 0, -1], [0, 0, 1], [0, -1, 0], [0, 1, 0]] as [$dx, $dy, $dz]) {
+		foreach (Facing::ALL as $side) {
+			[$dx, $dy, $dz] = Facing::OFFSET[$side];
 			$x = $node->x() + $dx;
 			$y = $node->y() + $dy;
 			$z = $node->z() + $dz;
