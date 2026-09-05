@@ -74,7 +74,7 @@ class WalkNodeEvaluator extends EntityNodeEvaluator {
 		$block = $this->blockGetter->getBlock($position);
 
 		if (!($block instanceof Liquid && $this->canStandOnFluid($block))) {
-			if ($this->canFloat() && $this->isEntityUnderwater() && $block instanceof Water) {
+			if ($this->canFloat() && $block instanceof Water) {
 				while (true) {
 					if (!$block instanceof Water) {
 						--$y;
