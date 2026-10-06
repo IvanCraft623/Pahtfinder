@@ -26,4 +26,5 @@ enum PathResult{
 	case REACHED;
 	case EXHAUSTED;
 	case BLOCKED;
+	case CANCELLED;
 }

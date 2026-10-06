@@ -130,22 +130,16 @@ class AsyncBlockGetter extends BlockGetter{
 
 		//Check the chunk has been already loaded
 		if(!array_key_exists($hash, $this->chunks)) {
-			$this->task->publishProgress($hash);
-
-			//Wait until an answer from the main thread
-			while(!isset($this->task->missingChunkResult)) {
-				if($this->task->isTerminated()) {
-					return null;
-				}
+			$chunk = $this->task->requestChunk($hash);
+			if($chunk === null) {
+				return null;
 			}
 
-			$chunk = $this->task->missingChunkResult;
 			if($chunk === "") { //failed to get the chunk :c
 				$this->cacheChunk($hash, null);
 			} else {
 				$this->cacheChunk($hash, FastChunkSerializer::deserializeTerrain($chunk));
 			}
-			unset($this->task->missingChunkResult);
 		}
 
 		return $this->chunks[$hash] ?? null;
@@ -171,8 +165,10 @@ class AsyncBlockGetter extends BlockGetter{
 	}
 
 	private function positionBlock(Block $block, Position $position) : void{
-		$property = new ReflectionProperty($block, "position");
-		$property->setValue($block, $position);
+		/** @var ?ReflectionProperty $positionProperty */
+		static $positionProperty = null;
+		$positionProperty ??= new ReflectionProperty(Block::class, "position");
+		$positionProperty->setValue($block, $position);
 	}
 
 	/**

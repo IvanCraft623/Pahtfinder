@@ -81,6 +81,8 @@ the search ended:
   reached; the path is a best-effort route to the closest node.
 - `PathResult::BLOCKED` — the whole reachable area was searched and the target is
   unreachable; the path is a best-effort route to the closest node.
+- `PathResult::CANCELLED` — the task returned by `findPathAsync()` was cancelled
+  with `cancel()`; the path is empty.
 
 `Path::canReach()` is shorthand for `getPathResult() === PathResult::REACHED`.
 

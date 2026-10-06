@@ -27,11 +27,13 @@ use Closure;
 use IvanCraft623\Pathfinder\evaluator\NodeEvaluator;
 use IvanCraft623\Pathfinder\Path;
 use IvanCraft623\Pathfinder\PathFinder;
+use IvanCraft623\Pathfinder\PathResult;
 use IvanCraft623\Pathfinder\world\AsyncBlockGetter;
 
 use pmmp\thread\ThreadSafeArray;
 use pocketmine\math\Vector3;
 use pocketmine\scheduler\AsyncTask;
+use pocketmine\scheduler\AsyncWorker;
 use pocketmine\Server;
 use pocketmine\world\format\io\FastChunkSerializer;
 use pocketmine\world\World;
@@ -41,7 +43,13 @@ class AsyncPathFinderTask extends AsyncTask {
 
 	private const TLS_KEY_COMPLETION_CALLBACK = "completionCallback";
 
-	public string $missingChunkResult;
+	/** Longest single wait for the main thread's answer, in microseconds; its notify ends the wait at once */
+	private const CHUNK_WAIT_TIMEOUT = 50_000;
+
+	/** Set by the main thread, unset by the worker once read */
+	private string $missingChunkResult;
+
+	private bool $cancelled = false;
 
 	/**
 	 * @phpstan-param ThreadSafeArray<int, string> $defaultChunks
@@ -63,7 +71,19 @@ class AsyncPathFinderTask extends AsyncTask {
 		$this->storeLocal(self::TLS_KEY_COMPLETION_CALLBACK, $onCompletion);
 	}
 
+	/**
+	 * The completion callback then gets an empty path with {@link PathResult::CANCELLED}, and the search is skipped
+	 * if it has not started.
+	 */
+	public function cancel() : void{
+		$this->cancelled = true;
+	}
+
 	public function onRun() : void{
+		if($this->cancelled) {
+			return;
+		}
+
 		/** @var NodeEvaluator */
 		$evaluator = igbinary_unserialize($this->nodeEvaluator);
 		$blockGetter = new AsyncBlockGetter($this, $this->worldMinY, $this->worldMaxY);
@@ -90,26 +110,57 @@ class AsyncPathFinderTask extends AsyncTask {
 		));
 	}
 
+	/**
+	 * Asks the main thread for a chunk and blocks the worker until it answers.
+	 *
+	 * @return string|null the serialized chunk, empty if it is not available, null if the task was terminated
+	 */
+	public function requestChunk(int $chunkHash) : ?string{
+		$this->publishProgress($chunkHash);
+		//Progress is otherwise only looked at once per tick
+		AsyncWorker::getNotifier()->wakeupSleeper();
+
+		/** @var string|null $chunk */
+		$chunk = $this->synchronized(function() : ?string{
+			while(!isset($this->missingChunkResult)) {
+				if($this->isTerminated()) {
+					return null;
+				}
+				$this->wait(self::CHUNK_WAIT_TIMEOUT);
+			}
+
+			$chunk = $this->missingChunkResult;
+			unset($this->missingChunkResult);
+			return $chunk;
+		});
+
+		return $chunk;
+	}
+
 	public function onProgressUpdate($progress) : void{
 		$world = Server::getInstance()->getWorldManager()->getWorld($this->worldId);
 
-		if($world === null) {
-			$this->missingChunkResult = "";
-		} else {
-			/** @var int $progress */
-			World::getXZ($progress, $chunkX, $chunkZ);
-			$chunk = $world->getChunk($chunkX, $chunkZ);
-			if($chunk === null) {
-				$this->missingChunkResult = "";
-			} else {
-				$this->missingChunkResult = FastChunkSerializer::serializeTerrain($chunk);
-			}
-		}
+		/** @var int $progress */
+		World::getXZ($progress, $chunkX, $chunkZ);
+		$chunk = $world?->getChunk($chunkX, $chunkZ);
+		$result = $chunk === null ? "" : FastChunkSerializer::serializeTerrain($chunk);
+
+		$this->synchronized(function() use ($result) : void{
+			$this->missingChunkResult = $result;
+			$this->notify();
+		});
 	}
 
 	public function onCompletion() : void{
 		/** @var Closure $callback */
 		$callback = $this->fetchLocal(self::TLS_KEY_COMPLETION_CALLBACK);
+		if($this->cancelled) {
+			/** @var Vector3 $target */
+			$target = igbinary_unserialize($this->target);
+			($callback)(new Path([], $target, PathResult::CANCELLED));
+			return;
+		}
+
 		($callback)($this->getResult());
 	}
 }
