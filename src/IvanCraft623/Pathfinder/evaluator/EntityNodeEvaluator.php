@@ -126,6 +126,14 @@ abstract class EntityNodeEvaluator extends NodeEvaluator {
 		return $this->entityDepth;
 	}
 
+	public function getNodeWidth() : int{
+		return $this->entityWidth;
+	}
+
+	public function getNodeHeight() : int{
+		return $this->entityHeight;
+	}
+
 	protected function getEntityBoundingBox() : AxisAlignedBB{
 		return $this->boundingBox;
 	}

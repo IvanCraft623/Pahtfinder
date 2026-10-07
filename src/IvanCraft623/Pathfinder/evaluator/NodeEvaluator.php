@@ -83,6 +83,20 @@ abstract class NodeEvaluator {
 		return $this->nodes[$hash];
 	}
 
+	/**
+	 * Blocks a node spans on the x and z axes.
+	 */
+	public function getNodeWidth() : int{
+		return 1;
+	}
+
+	/**
+	 * Blocks a node spans on the y axis.
+	 */
+	public function getNodeHeight() : int{
+		return 1;
+	}
+
 	public abstract function getStart() : Node;
 
 	public abstract function getGoal(float $x, float $y, float $z) : Target;

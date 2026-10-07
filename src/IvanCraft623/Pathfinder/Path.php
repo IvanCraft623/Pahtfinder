@@ -24,11 +24,18 @@ namespace IvanCraft623\Pathfinder;
 
 use pocketmine\entity\Entity;
 use pocketmine\math\Vector3;
+use pocketmine\world\World;
 use function array_splice;
 use function count;
+use function max;
+use function min;
 use const INF;
 
 class Path{
+
+	private const CORRIDOR_Y_BITS = 12;
+	private const CORRIDOR_Y_MASK = (1 << self::CORRIDOR_Y_BITS) - 1;
+	private const CORRIDOR_Y_OFFSET = 1 << (self::CORRIDOR_Y_BITS - 1);
 
 	/** @var Node[] */
 	private array $nodes;
@@ -43,15 +50,76 @@ class Path{
 
 	private PathResult $result;
 
+	private int $nodeWidth;
+
+	private int $nodeHeight;
+
+	/**
+	 * Blocks the search looked at for the nodes, per column. Null once the nodes changed, until needed again.
+	 *
+	 * @var int[]|null World::chunkHash() of the column => min y, max y and index of the last node using it, packed
+	 * @phpstan-var array<int, int>|null
+	 */
+	private ?array $corridor;
+
 	/**
 	 * @param Node[] $nodes
+	 * @param int    $nodeWidth  blocks a node spans on the x and z axes
+	 * @param int    $nodeHeight blocks a node spans on the y axis
 	 */
-	public function __construct(array $nodes, Vector3 $target, PathResult $result){
+	public function __construct(array $nodes, Vector3 $target, PathResult $result, int $nodeWidth = 1, int $nodeHeight = 1){
 		$this->nodes = $nodes;
 		$this->nodeCount = count($nodes);
 		$this->target = $target;
 		$this->distToTarget = $this->nodeCount === 0 ? INF : $nodes[$this->nodeCount - 1]->distanceManhattan($target);
 		$this->result = $result;
+		$this->nodeWidth = $nodeWidth;
+		$this->nodeHeight = $nodeHeight;
+		$this->corridor = $this->buildCorridor();
+	}
+
+	/**
+	 * @return int[]
+	 * @phpstan-return array<int, int>
+	 */
+	private function buildCorridor() : array{
+		$corridor = [];
+
+		$previousY = null;
+		foreach ($this->nodes as $index => $node) {
+			$nodeY = $node->y();
+			$previousY ??= $nodeY;
+			$minY = min($nodeY, $previousY) - 1;
+			$maxY = max($nodeY, $previousY) + $this->nodeHeight;
+			for ($x = $node->x() - 1, $maxX = $node->x() + $this->nodeWidth; $x <= $maxX; $x++) {
+				for ($z = $node->z() - 1, $maxZ = $node->z() + $this->nodeWidth; $z <= $maxZ; $z++) {
+					$hash = World::chunkHash($x, $z);
+					$column = $corridor[$hash] ?? null;
+					$columnMinY = $column === null ? $minY : min($minY, ($column & self::CORRIDOR_Y_MASK) - self::CORRIDOR_Y_OFFSET);
+					$columnMaxY = $column === null ? $maxY : max($maxY, (($column >> self::CORRIDOR_Y_BITS) & self::CORRIDOR_Y_MASK) - self::CORRIDOR_Y_OFFSET);
+					$corridor[$hash] = ($index << (2 * self::CORRIDOR_Y_BITS)) |
+						(($columnMaxY + self::CORRIDOR_Y_OFFSET) << self::CORRIDOR_Y_BITS) |
+						($columnMinY + self::CORRIDOR_Y_OFFSET);
+				}
+			}
+			$previousY = $nodeY;
+		}
+
+		return $corridor;
+	}
+
+	/**
+	 * Whether the block is one the search looked at for a node still to be walked: the blocks the entity
+	 * occupies there, the floor, the ring around them, and the column joining it to the previous node.
+	 */
+	public function isInCorridor(int $x, int $y, int $z) : bool{
+		$this->corridor ??= $this->buildCorridor();
+		$column = $this->corridor[World::chunkHash($x, $z)] ?? null;
+
+		return $column !== null &&
+			$y >= ($column & self::CORRIDOR_Y_MASK) - self::CORRIDOR_Y_OFFSET &&
+			$y <= (($column >> self::CORRIDOR_Y_BITS) & self::CORRIDOR_Y_MASK) - self::CORRIDOR_Y_OFFSET &&
+			($column >> (2 * self::CORRIDOR_Y_BITS)) >= $this->nextNodeIndex - 1;
 	}
 
 	public function advance() : void{
@@ -78,11 +146,13 @@ class Path{
 		if($this->nodeCount > $length){
 			array_splice($this->nodes, $length);
 			$this->nodeCount = $length;
+			$this->corridor = null;
 		}
 	}
 
 	public function replaceNode(int $index, Node $node) : void{
 		$this->nodes[$index] = $node;
+		$this->corridor = null;
 	}
 
 	/**

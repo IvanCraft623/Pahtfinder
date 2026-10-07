@@ -24,7 +24,6 @@ namespace IvanCraft623\Pathfinder\evaluator;
 
 use IvanCraft623\Pathfinder\BlockPathType;
 use IvanCraft623\Pathfinder\Node;
-use IvanCraft623\Pathfinder\Target;
 use IvanCraft623\Pathfinder\utils\EnumSet;
 use IvanCraft623\Pathfinder\world\BlockGetter;
 
@@ -34,7 +33,6 @@ use pocketmine\math\Vector3;
 use pocketmine\world\World;
 use function floor;
 use function max;
-use function min;
 
 class FlightNodeEvaluator extends WalkNodeEvaluator {
 

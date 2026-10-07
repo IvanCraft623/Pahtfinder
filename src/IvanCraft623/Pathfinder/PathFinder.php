@@ -73,7 +73,7 @@ class PathFinder {
 		return $result;
 	}
 
-	public static function findPathAsync(\Closure $onCompletion, NodeEvaluator $evaluator, World $world, Vector3 $position, Vector3 $target, int $maxVisitedNodes, float $maxDistanceFromStart, int $reachRange = 1) : AsyncPathfinderTask {
+	public static function findPathAsync(\Closure $onCompletion, NodeEvaluator $evaluator, World $world, Vector3 $position, Vector3 $target, int $maxVisitedNodes, float $maxDistanceFromStart, int $reachRange = 1) : AsyncPathFinderTask {
 		//Serialize all chunks between start and end
 		$serializedChunks = [];
 
@@ -92,7 +92,7 @@ class PathFinder {
 		}
 
 		//Submit async task
-		Server::getInstance()->getAsyncPool()->submitTask($task = new AsyncPathfinderTask(
+		Server::getInstance()->getAsyncPool()->submitTask($task = new AsyncPathFinderTask(
 			nodeEvaluator: igbinary_serialize($evaluator) ?? throw new \RuntimeException("Failed to serealize evaluator")
 			,
 			start: igbinary_serialize($position->asVector3()) ?? throw new \RuntimeException("Failed to serealize start"),
@@ -174,7 +174,7 @@ class PathFinder {
 			}
 		}
 
-		return self::reconstructPath($target->getBestNode(), $target->asVector3(), $result);
+		return self::reconstructPath($target->getBestNode(), $target->asVector3(), $result, $evaluator);
 	}
 
 	/**
@@ -199,7 +199,7 @@ class PathFinder {
 		return $h;
 	}
 
-	private static function reconstructPath(Node $startNode, Vector3 $target, PathResult $result) : Path{
+	private static function reconstructPath(Node $startNode, Vector3 $target, PathResult $result, NodeEvaluator $evaluator) : Path{
 		/** @var Node[] $nodes */
 		$nodes = [];
 		$currentNode = $startNode;
@@ -211,6 +211,6 @@ class PathFinder {
 			$nodes[] = $from;
 		}
 
-		return new Path(array_reverse($nodes), $target, $result);
+		return new Path(array_reverse($nodes), $target, $result, $evaluator->getNodeWidth(), $evaluator->getNodeHeight());
 	}
 }
