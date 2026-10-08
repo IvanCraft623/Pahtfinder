@@ -24,6 +24,7 @@ namespace IvanCraft623\Pathfinder;
 
 use pocketmine\entity\Entity;
 use pocketmine\math\Vector3;
+use pocketmine\world\format\Chunk;
 use pocketmine\world\World;
 use function array_splice;
 use function count;
@@ -60,7 +61,13 @@ class Path{
 	 * @var int[]|null World::chunkHash() of the column => min y, max y and index of the last node using it, packed
 	 * @phpstan-var array<int, int>|null
 	 */
-	private ?array $corridor;
+	private ?array $corridor = null;
+
+	/**
+	 * @var true[] World::chunkHash() of the chunk => true
+	 * @phpstan-var array<int, true>
+	 */
+	private array $corridorChunks = [];
 
 	/**
 	 * @param Node[] $nodes
@@ -75,15 +82,12 @@ class Path{
 		$this->result = $result;
 		$this->nodeWidth = $nodeWidth;
 		$this->nodeHeight = $nodeHeight;
-		$this->corridor = $this->buildCorridor();
+		$this->buildCorridor();
 	}
 
-	/**
-	 * @return int[]
-	 * @phpstan-return array<int, int>
-	 */
-	private function buildCorridor() : array{
+	private function buildCorridor() : void{
 		$corridor = [];
+		$chunks = [];
 
 		$previousY = null;
 		foreach ($this->nodes as $index => $node) {
@@ -91,8 +95,12 @@ class Path{
 			$previousY ??= $nodeY;
 			$minY = min($nodeY, $previousY) - 1;
 			$maxY = max($nodeY, $previousY) + $this->nodeHeight;
-			for ($x = $node->x() - 1, $maxX = $node->x() + $this->nodeWidth; $x <= $maxX; $x++) {
-				for ($z = $node->z() - 1, $maxZ = $node->z() + $this->nodeWidth; $z <= $maxZ; $z++) {
+			$minX = $node->x() - 1;
+			$maxX = $node->x() + $this->nodeWidth;
+			$minZ = $node->z() - 1;
+			$maxZ = $node->z() + $this->nodeWidth;
+			for ($x = $minX; $x <= $maxX; $x++) {
+				for ($z = $minZ; $z <= $maxZ; $z++) {
 					$hash = World::chunkHash($x, $z);
 					$column = $corridor[$hash] ?? null;
 					$columnMinY = $column === null ? $minY : min($minY, ($column & self::CORRIDOR_Y_MASK) - self::CORRIDOR_Y_OFFSET);
@@ -102,10 +110,20 @@ class Path{
 						($columnMinY + self::CORRIDOR_Y_OFFSET);
 				}
 			}
+			//A node spans less than a chunk, its corners are in every chunk it touches
+			$minChunkX = $minX >> Chunk::COORD_BIT_SIZE;
+			$maxChunkX = $maxX >> Chunk::COORD_BIT_SIZE;
+			$minChunkZ = $minZ >> Chunk::COORD_BIT_SIZE;
+			$maxChunkZ = $maxZ >> Chunk::COORD_BIT_SIZE;
+			$chunks[World::chunkHash($minChunkX, $minChunkZ)] = true;
+			$chunks[World::chunkHash($minChunkX, $maxChunkZ)] = true;
+			$chunks[World::chunkHash($maxChunkX, $minChunkZ)] = true;
+			$chunks[World::chunkHash($maxChunkX, $maxChunkZ)] = true;
 			$previousY = $nodeY;
 		}
 
-		return $corridor;
+		$this->corridor = $corridor;
+		$this->corridorChunks = $chunks;
 	}
 
 	/**
@@ -113,13 +131,29 @@ class Path{
 	 * occupies there, the floor, the ring around them, and the column joining it to the previous node.
 	 */
 	public function isInCorridor(int $x, int $y, int $z) : bool{
-		$this->corridor ??= $this->buildCorridor();
+		if ($this->corridor === null) {
+			$this->buildCorridor();
+		}
 		$column = $this->corridor[World::chunkHash($x, $z)] ?? null;
 
 		return $column !== null &&
 			$y >= ($column & self::CORRIDOR_Y_MASK) - self::CORRIDOR_Y_OFFSET &&
 			$y <= (($column >> self::CORRIDOR_Y_BITS) & self::CORRIDOR_Y_MASK) - self::CORRIDOR_Y_OFFSET &&
 			($column >> (2 * self::CORRIDOR_Y_BITS)) >= $this->nextNodeIndex - 1;
+	}
+
+	/**
+	 * Chunks holding the blocks the search looked at for the nodes.
+	 *
+	 * @return true[] World::chunkHash() of the chunk => true
+	 * @phpstan-return array<int, true>
+	 */
+	public function getCorridorChunks() : array{
+		if ($this->corridor === null) {
+			$this->buildCorridor();
+		}
+
+		return $this->corridorChunks;
 	}
 
 	public function advance() : void{
