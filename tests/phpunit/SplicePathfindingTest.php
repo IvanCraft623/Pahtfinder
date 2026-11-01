@@ -38,10 +38,7 @@ final class SplicePathfindingTest extends PathfindingTestCase{
 	 */
 	private static function countedSearch(TestWorld $world, Vector3 $start, Vector3 $target, bool $startAtNode = false) : array{
 		$expanded = 0;
-		$path = PathFinder::search(
-			new WalkNodeEvaluator(),
-			self::zombie(),
-			$world->getBlockGetter(),
+		$path = (new AStar(new WalkNodeEvaluator(), self::zombie(), $world->getBlockGetter()))->search(
 			new SearchRequest($start, $target, 2000, 64, 0, startAtNode: $startAtNode),
 			function() use (&$expanded) : bool{
 				++$expanded;
@@ -89,11 +86,11 @@ final class SplicePathfindingTest extends PathfindingTestCase{
 	#[DataProvider("wideMobs")]
 	public function testWideMobsContinueFromTheNode(NodeEvaluator $evaluator, MovementProfile $profile) : void{
 		$world = self::flatWorld();
-		$path = PathFinder::search($evaluator, $profile, $world->getBlockGetter(), new SearchRequest(self::standingAt(3, 5), self::standingAt(20, 5), 2000, 64, 0));
+		$path = (new AStar($evaluator, $profile, $world->getBlockGetter()))->search(new SearchRequest(self::standingAt(3, 5), self::standingAt(20, 5), 2000, 64, 0));
 		self::assertGreaterThan(4, $path->getNodeCount());
 
 		for ($index = 1; $index < $path->getNodeCount(); ++$index) {
-			$continuation = PathFinder::search($evaluator, $profile, $world->getBlockGetter(), new SearchRequest($path->getNode($index), self::standingAt(22, 7), 2000, 64, 0, startAtNode: true));
+			$continuation = (new AStar($evaluator, $profile, $world->getBlockGetter()))->search(new SearchRequest($path->getNode($index), self::standingAt(22, 7), 2000, 64, 0, startAtNode: true));
 			self::assertTrue($continuation->getNode(0)->equals($path->getNode($index)), "starts at node $index");
 			$path->splice($index, $continuation);
 		}

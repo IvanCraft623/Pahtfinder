@@ -44,12 +44,8 @@ final class WalkPathfindingTest extends PathfindingTestCase{
 	public function testStartingInTheAirStartsFromTheGroundBelow() : void{
 		$start = new Vector3(2.5, self::FLOOR_Y + 3.4, 2.5);
 		$target = self::standingAt(10, 2);
-		$path = PathFinder::search(
-			self::walker(),
-			self::zombie(),
-			self::flatWorld()->getBlockGetter(),
-			new SearchRequest($start, $target, 2000, 64, 0, onGround: false)
-		);
+		$path = (new AStar(self::walker(), self::zombie(), self::flatWorld()->getBlockGetter()))
+			->search(new SearchRequest($start, $target, 2000, 64, 0, onGround: false));
 
 		self::assertReached($path, $target);
 		self::assertSame(self::FLOOR_Y + 1, $path->getNode(0)->y());
@@ -60,12 +56,8 @@ final class WalkPathfindingTest extends PathfindingTestCase{
 	 */
 	public function testFallingOffAtTheBottomOfTheWorld() : void{
 		$world = (new TestWorld())->fill(0, 0, 0, 4, 0, 4, VanillaBlocks::STONE());
-		$path = PathFinder::search(
-			self::walker(),
-			self::zombie(),
-			$world->getBlockGetter(0, 128),
-			new SearchRequest(new Vector3(2.5, 1, 2.5), new Vector3(10.5, 1, 2.5), 200, 32, 0)
-		);
+		$path = (new AStar(self::walker(), self::zombie(), $world->getBlockGetter(0, 128)))
+			->search(new SearchRequest(new Vector3(2.5, 1, 2.5), new Vector3(10.5, 1, 2.5), 200, 32, 0));
 
 		self::assertSame(PathResult::BLOCKED, $path->getPathResult());
 		self::assertSame(4, $path->getEndNode()?->x(), "stops at the edge");

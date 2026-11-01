@@ -22,10 +22,10 @@ declare(strict_types=1);
 
 namespace IvanCraft623\Pathfinder\execution;
 
+use IvanCraft623\Pathfinder\AStar;
 use IvanCraft623\Pathfinder\evaluator\NodeEvaluator;
 use IvanCraft623\Pathfinder\MovementProfile;
 use IvanCraft623\Pathfinder\Path;
-use IvanCraft623\Pathfinder\PathFinder;
 use IvanCraft623\Pathfinder\SearchRequest;
 use IvanCraft623\Pathfinder\world\Terrain;
 use pocketmine\promise\PromiseResolver;
@@ -37,7 +37,7 @@ final class SyncSearchExecutor implements SearchExecutor{
 	public function search(NodeEvaluator $evaluator, MovementProfile $profile, Terrain $terrain, SearchRequest $request) : PathSearch{
 		/** @phpstan-var PromiseResolver<Path> $resolver */
 		$resolver = new PromiseResolver();
-		$resolver->resolve(PathFinder::search($evaluator, $profile, $terrain->createBlockGetter(), $request));
+		$resolver->resolve((new AStar($evaluator, $profile, $terrain->createBlockGetter()))->search($request));
 		return new PathSearch($resolver->getPromise(), static function() : void{});
 	}
 }

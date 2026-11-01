@@ -25,61 +25,55 @@ namespace IvanCraft623\Pathfinder;
 use Closure;
 use IvanCraft623\Pathfinder\evaluator\NodeEvaluator;
 use IvanCraft623\Pathfinder\world\BlockGetter;
-use pocketmine\math\Vector3;
 use function array_reverse;
 use function floor;
-use function min;
-use const INF;
 
-class PathFinder {
+/**
+ * Searches paths for one mob shape over one terrain; not reentrant.
+ */
+final class AStar {
 
 	public const FUDGING = 1.5;
+
+	public function __construct(
+		private readonly NodeEvaluator $evaluator,
+		private readonly MovementProfile $profile,
+		private readonly BlockGetter $blockGetter
+	){
+	}
 
 	/**
 	 * @phpstan-param (Closure() : bool)|null $isCancelled checked between nodes
 	 */
-	public static function search(NodeEvaluator $evaluator, MovementProfile $profile, BlockGetter $blockGetter, SearchRequest $request, ?Closure $isCancelled = null) : Path{
-		$evaluator->prepare(new SearchContext($blockGetter, $profile, $request->start, $request->onGround));
+	public function search(SearchRequest $request, ?Closure $isCancelled = null) : Path{
+		$this->evaluator->prepare(new SearchContext($this->blockGetter, $this->profile, $request->start, $request->onGround));
 		try{
 			$target = $request->target;
-			return self::actuallyFindPath(
-				$evaluator,
-				$request->startAtNode ? $evaluator->getStartNode($request->start) : $evaluator->getStart(),
-				$evaluator->getGoal(floor($target->x), floor($target->y), floor($target->z)),
-				$request->maxVisitedNodes,
-				$request->maxDistanceFromStart,
-				$request->reachRange,
-				$profile,
+			return $this->run(
+				$request->startAtNode ? $this->evaluator->getStartNode($request->start) : $this->evaluator->getStart(),
+				$this->evaluator->getGoal(floor($target->x), floor($target->y), floor($target->z)),
+				$request,
 				$isCancelled
 			);
 		}finally{
-			$evaluator->done();
+			$this->evaluator->done();
 		}
 	}
 
 	/**
-	 * Attempts to find a path from the start node to the target.
+	 * @phpstan-param (Closure() : bool)|null $isCancelled
 	 */
-	public static function actuallyFindPath(
-		NodeEvaluator $evaluator,
-		Node $startNode,
-		Target $target,
-		int $maxVisitedNodes,
-		float $maxDistanceFromStart,
-		int $reachRange,
-		MovementProfile $profile,
-		?Closure $isCancelled = null
-	) : Path {
+	private function run(Node $startNode, Target $target, SearchRequest $request, ?Closure $isCancelled) : Path{
 		$openSet = new BinaryHeap();
 
 		$startNode->g = 0.0;
-		$startNode->h = self::getBestHFor($startNode, $target);
+		$startNode->h = $this->heuristic($startNode, $target);
 		$startNode->f = $startNode->h;
 
 		$openSet->insert($startNode);
 
 		$visitedNodes = 0;
-
+		$maxDistanceFromStart = $request->maxDistanceFromStart;
 		$maxDistanceFromStartSqr = $maxDistanceFromStart ** 2;
 
 		$result = PathResult::BLOCKED;
@@ -89,7 +83,7 @@ class PathFinder {
 				$result = PathResult::CANCELLED;
 				break;
 			}
-			if (++$visitedNodes >= $maxVisitedNodes) {
+			if (++$visitedNodes >= $request->maxVisitedNodes) {
 				$result = PathResult::EXHAUSTED;
 
 				break;
@@ -98,7 +92,7 @@ class PathFinder {
 			$current = $openSet->pop();
 			$current->closed = true;
 
-			if ($current->distanceManhattan($target) <= $reachRange) {
+			if ($current->distanceManhattan($target) <= $request->reachRange) {
 				$target->setReached();
 				$result = PathResult::REACHED;
 
@@ -106,7 +100,7 @@ class PathFinder {
 			}
 
 			if ($current->distanceSquared($startNode) < $maxDistanceFromStartSqr) {
-				foreach ($evaluator->getNeighbors($current) as $neighbor) {
+				foreach ($this->evaluator->getNeighbors($current) as $neighbor) {
 					$distance = $current->distance($neighbor);
 					$neighbor->walkedDistance = $current->walkedDistance + $distance;
 					$newNeighborG = $current->g + $distance + $neighbor->costMalus;
@@ -114,7 +108,7 @@ class PathFinder {
 					if ($neighbor->walkedDistance < $maxDistanceFromStart && (!$neighbor->inOpenSet() || $newNeighborG < $neighbor->g)) {
 						$neighbor->cameFrom = $current;
 						$neighbor->g = $newNeighborG;
-						$neighbor->h = self::getBestHFor($neighbor, $target) * self::FUDGING;
+						$neighbor->h = $this->heuristic($neighbor, $target) * self::FUDGING;
 
 						if ($neighbor->inOpenSet()) {
 							$openSet->changeCost($neighbor, $neighbor->g + $neighbor->h);
@@ -127,43 +121,26 @@ class PathFinder {
 			}
 		}
 
-		return self::reconstructPath($target->getBestNode(), $target->asVector3(), $result, $profile);
+		return $this->reconstructPath($target, $result);
 	}
 
-	/**
-	 * @param Target[] $targets
-	 */
-	public static function getBestH(Node $node, array $targets) : float{
-		$bestH = INF;
-		foreach ($targets as $target) {
-			$bestH = min($bestH, self::getBestHFor($node, $target));
-		}
-
-		return $bestH;
-	}
-
-	/**
-	 * Single-target heuristic; avoids the array allocation in {@link getBestH()}.
-	 */
-	private static function getBestHFor(Node $node, Target $target) : float{
+	private function heuristic(Node $node, Target $target) : float{
 		$h = $node->distance($target);
 		$target->updateBest($h, $node);
 
 		return $h;
 	}
 
-	private static function reconstructPath(Node $startNode, Vector3 $target, PathResult $result, MovementProfile $profile) : Path{
+	private function reconstructPath(Target $target, PathResult $result) : Path{
+		$currentNode = $target->getBestNode();
 		/** @var Node[] $nodes */
-		$nodes = [];
-		$currentNode = $startNode;
-		$nodes[] = $currentNode;
+		$nodes = [$currentNode];
 
 		while (($from = $currentNode->cameFrom) !== null) {
-			/** @var Node $from */
 			$currentNode = $from;
 			$nodes[] = $from;
 		}
 
-		return new Path(array_reverse($nodes), $target, $result, $profile->nodeWidth, $profile->nodeHeight);
+		return new Path(array_reverse($nodes), $target->asVector3(), $result, $this->profile->nodeWidth, $this->profile->nodeHeight);
 	}
 }

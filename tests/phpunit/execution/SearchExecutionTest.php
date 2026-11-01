@@ -22,9 +22,9 @@ declare(strict_types=1);
 
 namespace IvanCraft623\Pathfinder\execution;
 
+use IvanCraft623\Pathfinder\AStar;
 use IvanCraft623\Pathfinder\evaluator\WalkNodeEvaluator;
 use IvanCraft623\Pathfinder\Path;
-use IvanCraft623\Pathfinder\PathFinder;
 use IvanCraft623\Pathfinder\PathfindingTestCase;
 use IvanCraft623\Pathfinder\PathResult;
 use IvanCraft623\Pathfinder\SearchRequest;
@@ -70,10 +70,7 @@ final class SearchExecutionTest extends PathfindingTestCase{
 		$evaluator = new WalkNodeEvaluator();
 
 		$checks = 0;
-		$path = PathFinder::search(
-			$evaluator,
-			self::zombie(),
-			self::flatWorld()->getBlockGetter(),
+		$path = (new AStar($evaluator, self::zombie(), self::flatWorld()->getBlockGetter()))->search(
 			new SearchRequest($start, self::standingAt(28, 28), 2000, 64, 0),
 			function() use (&$checks) : bool{
 				return ++$checks > 5;

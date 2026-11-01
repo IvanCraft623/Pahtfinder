@@ -79,12 +79,11 @@ abstract class PathfindingTestCase extends TestCase{
 		int $reachRange = 0,
 		?MovementProfile $profile = null
 	) : Path{
-		return PathFinder::search(
+		return (new AStar(
 			$evaluator,
 			$profile ?? self::zombie(),
-			$world instanceof TestWorld ? $world->getBlockGetter() : $world,
-			new SearchRequest($start, $target, $maxVisitedNodes, $maxDistanceFromStart, $reachRange)
-		);
+			$world instanceof TestWorld ? $world->getBlockGetter() : $world
+		))->search(new SearchRequest($start, $target, $maxVisitedNodes, $maxDistanceFromStart, $reachRange));
 	}
 
 	protected static function assertReached(Path $path, Vector3 $target) : void{

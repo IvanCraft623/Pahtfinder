@@ -24,10 +24,10 @@ namespace IvanCraft623\Pathfinder\task;
 
 use Closure;
 
+use IvanCraft623\Pathfinder\AStar;
 use IvanCraft623\Pathfinder\evaluator\NodeEvaluator;
 use IvanCraft623\Pathfinder\MovementProfile;
 use IvanCraft623\Pathfinder\Path;
-use IvanCraft623\Pathfinder\PathFinder;
 use IvanCraft623\Pathfinder\PathResult;
 use IvanCraft623\Pathfinder\SearchRequest;
 use IvanCraft623\Pathfinder\world\ArrayChunkSource;
@@ -120,7 +120,7 @@ class AsyncPathFinderTask extends AsyncTask implements ChunkRequester {
 		/** @var MovementProfile $profile */
 		$profile = igbinary_unserialize($this->profile);
 
-		return PathFinder::search($evaluator, $profile, $blockGetter, $this->getRequest(), fn() : bool => $this->cancelled);
+		return (new AStar($evaluator, $profile, $blockGetter))->search($this->getRequest(), fn() : bool => $this->cancelled);
 	}
 
 	private function getRequest() : SearchRequest{
