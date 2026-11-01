@@ -23,6 +23,7 @@ declare(strict_types=1);
 namespace IvanCraft623\Pathfinder\execution;
 
 use IvanCraft623\Pathfinder\evaluator\NodeEvaluator;
+use IvanCraft623\Pathfinder\MovementProfile;
 use IvanCraft623\Pathfinder\Path;
 use IvanCraft623\Pathfinder\SearchRequest;
 use IvanCraft623\Pathfinder\task\AsyncPathFinderTask;
@@ -47,11 +48,12 @@ final class AsyncSearchExecutor implements SearchExecutor{
 	){
 	}
 
-	public function search(NodeEvaluator $evaluator, Terrain $terrain, SearchRequest $request) : PathSearch{
+	public function search(NodeEvaluator $evaluator, MovementProfile $profile, Terrain $terrain, SearchRequest $request) : PathSearch{
 		/** @phpstan-var PromiseResolver<Path> $resolver */
 		$resolver = new PromiseResolver();
 		$task = new AsyncPathFinderTask(
 			igbinary_serialize($evaluator) ?? throw new \RuntimeException("Failed to serialize the evaluator"),
+			igbinary_serialize($profile) ?? throw new \RuntimeException("Failed to serialize the profile"),
 			igbinary_serialize($request) ?? throw new \RuntimeException("Failed to serialize the request"),
 			ThreadSafeArray::fromArray($this->serializeChunksBetween($terrain, $request)),
 			$terrain,

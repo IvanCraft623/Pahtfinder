@@ -44,6 +44,7 @@ Searches run through a `SearchExecutor`: `AsyncSearchExecutor` searches on a wor
 calling thread. Both return a `PathSearch`, whose promise always resolves with a `Path`.
 
 ```php
+use IvanCraft623\Pathfinder\MovementProfile;
 use IvanCraft623\Pathfinder\Path;
 use IvanCraft623\Pathfinder\PathResult;
 use IvanCraft623\Pathfinder\SearchRequest;
@@ -54,20 +55,19 @@ use pocketmine\math\Vector3;
 
 $executor = new AsyncSearchExecutor($server->getAsyncPool(), $plugin->getLogger());
 
-$evaluator = new WalkNodeEvaluator();
-$evaluator->setEntitySize($entity->getSize());
-$evaluator->setEntityBoundingBox($entity->getBoundingBox());
-$evaluator->setEntityOnGround($entity->isOnGround());
-$evaluator->setMaxUpStep(0.6);
-$evaluator->setMaxFallDistance(3);
-$evaluator->setCanOpenDoors(true);
+$profile = new MovementProfile(
+	width: $entity->getSize()->getWidth(),
+	height: $entity->getSize()->getHeight(),
+	canOpenDoors: true
+);
 
-$search = $executor->search($evaluator, Terrain::fromWorld($entity->getWorld()), new SearchRequest(
+$search = $executor->search(new WalkNodeEvaluator(), $profile, Terrain::fromWorld($entity->getWorld()), new SearchRequest(
 	$entity->getPosition(),
 	new Vector3(100, 64, 100),
 	maxVisitedNodes: 2000,      // stop searching after this many nodes
 	maxDistanceFromStart: 32,   // do not search further than this from the start
-	reachRange: 1               // consider the target reached within 1 block
+	reachRange: 1,              // consider the target reached within 1 block
+	onGround: $entity->isOnGround()
 ));
 $search->getPromise()->onCompletion(function(Path $path) : void{
 	if ($path->getPathResult() === PathResult::REACHED) {
@@ -98,17 +98,16 @@ the search ended:
 
 ### Using evaluators
 
-An evaluator is your mob's "mobility profile": how big it is, how high it can
-step or fall, whether it opens doors, floats, or swims. Configure one with the
-setters below and pass it to a `SearchExecutor` — the search calls
-`prepare()` and `done()` for you.
+An evaluator is how a mob moves: walking, flying or swimming. What the mob is
+goes in a `MovementProfile`: its size, how high it can step or fall, whether it
+opens doors, floats, walks over fences or stands on fluids, and its traversal
+costs. Pass both to a `SearchExecutor`; the search calls `prepare()` and `done()`
+for you.
 
-> With `AsyncSearchExecutor` the evaluator is serialized to the worker thread,
-> so only set thread-safe values on it (numbers, `EntitySizeInfo`, `AxisAlignedBB`).
->  Never store complex objects like `Entity` as reference.
+> With `AsyncSearchExecutor` the evaluator and the profile are serialized to the
+> worker thread, so never keep references to complex objects like `Entity` in them.
 
-You can also tweak traversal costs with a `BlockPathTypeCostMap` passed to the
-constructor:
+Tweak traversal costs with a `BlockPathTypeCostMap` in the profile:
 
 ```php
 use IvanCraft623\Pathfinder\BlockPathType;
@@ -117,48 +116,63 @@ use IvanCraft623\Pathfinder\BlockPathTypeCostMap;
 $costMap = new BlockPathTypeCostMap();
 $costMap->setPathfindingMalus(BlockPathType::WATER, 2);
 
-$evaluator = new WalkNodeEvaluator($costMap);
+$profile = new MovementProfile(width: 0.6, height: 1.95, costMap: $costMap);
+```
+
+Presets such as `BlockPathTypeCostMap::amphibious()` give the costs a kind of
+mob needs; `merge()` returns a new map with another map's costs over them. The
+profile keeps a copy of its cost map, so build a new profile to pick up changes:
+
+```php
+// the mob's own costs win, the amphibious ones fill in the rest
+$costMap = BlockPathTypeCostMap::amphibious()->merge($mobCostMap);
 ```
 
 ### Pre-made evaluators
 
 | Evaluator | Use for |
 | --- | --- |
-| `NodeEvaluator` | Abstract base class. No entity awareness — implement everything yourself. |
-| `EntityNodeEvaluator` | Abstract. Extend this for mobs: adds entity size, bounding box, on-ground, `setMaxUpStep()`, `setMaxFallDistance()`, `setCanOpenDoors()`, `setCanPassDoors()`, `setCanFloat()`, `setCanWalkOverFences()`, `setLiquidsThatCanStandOn()`. |
+| `NodeEvaluator` | Abstract base class — implement everything yourself. |
 | `WalkNodeEvaluator` | Land mobs. 4 cardinal + 4 diagonal neighbors with up-step/jump and fall checks; handles fences, doors, rails and water borders. |
 | `FlightNodeEvaluator` | Flying mobs. 6 cardinals + edges + corners; extra cost for flying close to the ground. |
+| `AmphibiousNodeEvaluator` | Mobs that walk on land and swim in 3D through water. Use with `BlockPathTypeCostMap::amphibious()` costs. |
 
-All configurable on `EntityNodeEvaluator` (and subclasses):
+Everything a `MovementProfile` takes:
 
 ```php
-$evaluator->setEntitySize($entity->getSize());
-$evaluator->setEntityBoundingBox($entity->getBoundingBox());
-$evaluator->setEntityOnGround($entity->isOnGround());
-$evaluator->setMaxUpStep(0.6);
-$evaluator->setMaxFallDistance(3);
-$evaluator->setCanOpenDoors(true);
-$evaluator->setCanPassDoors(false);
-$evaluator->setCanFloat(true);
-$evaluator->setCanWalkOverFences(false);
+$profile = new MovementProfile(
+	width: 0.6,
+	height: 1.95,
+	maxUpStep: 0.6,
+	maxFallDistance: 3,
+	costMap: new BlockPathTypeCostMap(),
+	canPassDoors: false,
+	canOpenDoors: true,
+	canFloat: true,
+	canWalkOverFences: false,
+	liquidsThatCanStandOn: [BlockTypeIds::LAVA],
+	eyeHeight: 1.74             // defaults like PocketMine's EntitySizeInfo
+);
 ```
 
 ### Building your own evaluator
 
-Extend `NodeEvaluator` (or `EntityNodeEvaluator` for the entity helpers) and
-implement the five abstract methods:
+Extend `NodeEvaluator` and implement the five abstract methods:
 
-- `getStart() : Node` — the start node, usually derived from `$this->startPosition`.
+- `getStart() : Node` — the start node, usually derived from `$this->context->start`.
 - `getGoal(float $x, float $y, float $z) : Target` — the target node; typically
   `$this->getTargetFromNode($this->getNodeAt(...))`.
 - `getNeighbors(Node $node) : array` — which nodes are reachable from `$node`.
-- `getBlockPathType(BlockGetter $blockGetter, int $x, int $y, int $z) : BlockPathType`
-  — classify a block.
+- `getBlockPathType(BlockGetter $blockGetter, int $x, int $y, int $z, Vector3 $mobPosition) : BlockPathType`
+  — classify a block for a mob at `$mobPosition`. It is also called outside a
+  search (e.g. to check a strafe target), so it must not rely on `$this->context`.
 - `getCachedBlockPathType(...) : BlockPathType` — cached variant used during the
   search.
 
-You have access to `$this->blockGetter`, `$this->startPosition`, `$this->nodes`
-(the node cache) and `$this->pathTypeCostMap`, plus the `getNodeAt()` helper.
+You have access to `$this->context` (the block getter, the profile, the start and
+whether it is on the ground) and `$this->nodes` (the node cache), plus the
+`getNodeAt()` and `getPathfindingMalus()` helpers. Costs always come from the
+profile's cost map.
 
 ```php
 use IvanCraft623\Pathfinder\BlockPathType;
@@ -167,15 +181,16 @@ use IvanCraft623\Pathfinder\Target;
 use IvanCraft623\Pathfinder\evaluator\NodeEvaluator;
 use IvanCraft623\Pathfinder\world\BlockGetter;
 use pocketmine\math\Facing;
+use pocketmine\math\Vector3;
 use function floor;
 
 final class SimpleWalkEvaluator extends NodeEvaluator {
 
 	public function getStart() : Node{
 		return $this->getNodeAt(
-			(int) floor($this->startPosition->x),
-			(int) floor($this->startPosition->y),
-			(int) floor($this->startPosition->z)
+			(int) floor($this->context->start->x),
+			(int) floor($this->context->start->y),
+			(int) floor($this->context->start->z)
 		);
 	}
 
@@ -195,11 +210,12 @@ final class SimpleWalkEvaluator extends NodeEvaluator {
 			$y = $node->y() + $dy;
 			$z = $node->z() + $dz;
 
-			if (!$this->blockGetter->isInWorld($x, $y, $z)) {
+			$blockGetter = $this->context->blockGetter;
+			if (!$blockGetter->isInWorld($x, $y, $z)) {
 				continue;
 			}
 
-			if ($this->getCachedBlockPathType($this->blockGetter, $x, $y, $z) !== BlockPathType::BLOCKED) {
+			if ($this->getCachedBlockPathType($blockGetter, $x, $y, $z) !== BlockPathType::BLOCKED) {
 				$neighbors[] = $this->getNodeAt($x, $y, $z);
 			}
 		}
@@ -207,12 +223,12 @@ final class SimpleWalkEvaluator extends NodeEvaluator {
 		return $neighbors;
 	}
 
-	public function getBlockPathType(BlockGetter $blockGetter, int $x, int $y, int $z) : BlockPathType{
+	public function getBlockPathType(BlockGetter $blockGetter, int $x, int $y, int $z, Vector3 $mobPosition) : BlockPathType{
 		return $blockGetter->getBlockAt($x, $y, $z)->isSolid() ? BlockPathType::BLOCKED : BlockPathType::OPEN;
 	}
 
 	public function getCachedBlockPathType(BlockGetter $blockGetter, int $x, int $y, int $z) : BlockPathType{
-		return $this->getBlockPathType($blockGetter, $x, $y, $z);
+		return $this->getBlockPathType($blockGetter, $x, $y, $z, $this->context->start);
 	}
 }
 ```
@@ -229,9 +245,10 @@ in MobPlugin for a full production implementation (stuck detection, corner
 cutting, path trimming, timeouts).
 
 ```php
+use IvanCraft623\Pathfinder\MovementProfile;
 use IvanCraft623\Pathfinder\Path;
 use IvanCraft623\Pathfinder\SearchRequest;
-use IvanCraft623\Pathfinder\evaluator\EntityNodeEvaluator;
+use IvanCraft623\Pathfinder\evaluator\NodeEvaluator;
 use IvanCraft623\Pathfinder\execution\SearchExecutor;
 use IvanCraft623\Pathfinder\world\Terrain;
 use pocketmine\entity\Entity;
@@ -244,20 +261,24 @@ final class Navigator {
 
 	public function __construct(
 		private Entity $entity,
-		private EntityNodeEvaluator $evaluator,
+		private NodeEvaluator $evaluator,
 		private SearchExecutor $executor,
 		private float $speed = 0.4
 	){}
 
 	public function moveTo(Vector3 $target) : void{
-		$this->evaluator->setEntitySize($this->entity->getSize());
-		$this->evaluator->setEntityBoundingBox($this->entity->getBoundingBox());
-		$this->evaluator->setEntityOnGround($this->entity->isOnGround());
-
+		$size = $this->entity->getSize();
 		$this->executor->search(
 			$this->evaluator,
+			new MovementProfile($size->getWidth(), $size->getHeight(), canOpenDoors: true),
 			Terrain::fromWorld($this->entity->getWorld()),
-			new SearchRequest($this->entity->getPosition(), $target, maxVisitedNodes: 2000, maxDistanceFromStart: 32)
+			new SearchRequest(
+				$this->entity->getPosition(),
+				$target,
+				maxVisitedNodes: 2000,
+				maxDistanceFromStart: 32,
+				onGround: $this->entity->isOnGround()
+			)
 		)->getPromise()->onCompletion(function(Path $path) : void{
 			$this->path = $path;
 		}, static function() : void{});
@@ -312,15 +333,8 @@ final class Navigator {
 ### Putting it together
 
 ```php
-$evaluator = new WalkNodeEvaluator(); // or FlightNodeEvaluator for flying mobs
-$evaluator->setEntitySize($entity->getSize());
-$evaluator->setEntityBoundingBox($entity->getBoundingBox());
-$evaluator->setEntityOnGround($entity->isOnGround());
-$evaluator->setMaxUpStep(0.6);
-$evaluator->setMaxFallDistance(3);
-$evaluator->setCanOpenDoors(true);
-
-$navigator = new Navigator($entity, $evaluator);
+$executor = new AsyncSearchExecutor($server->getAsyncPool(), $plugin->getLogger());
+$navigator = new Navigator($entity, new WalkNodeEvaluator(), $executor); // or FlightNodeEvaluator for flying mobs
 
 $navigator->moveTo(new Vector3(100, 64, 100));
 

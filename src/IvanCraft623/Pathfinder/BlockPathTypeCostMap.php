@@ -27,11 +27,31 @@ final class BlockPathTypeCostMap {
 	/** @var array<string, float> */
 	private array $pathfindingMalus = [];
 
+	/**
+	 * Costs of mobs that swim through water and walk on land.
+	 */
+	public static function amphibious() : self{
+		$costMap = new self();
+		$costMap->setPathfindingMalus(BlockPathType::WATER, 0.0);
+		$costMap->setPathfindingMalus(BlockPathType::WALKABLE, 6.0);
+		$costMap->setPathfindingMalus(BlockPathType::WATER_BORDER, 4.0);
+		return $costMap;
+	}
+
 	public function getPathfindingMalus(BlockPathType $pathType) : float{
 		return $this->pathfindingMalus[$pathType->name] ?? $pathType->getMalus();
 	}
 
 	public function setPathfindingMalus(BlockPathType $pathType, float $malus) : void{
 		$this->pathfindingMalus[$pathType->name] = $malus;
+	}
+
+	/**
+	 * A new map with these costs, overwritten by the ones $overrides sets.
+	 */
+	public function merge(BlockPathTypeCostMap $overrides) : self{
+		$merged = new self();
+		$merged->pathfindingMalus = $overrides->pathfindingMalus + $this->pathfindingMalus;
+		return $merged;
 	}
 }

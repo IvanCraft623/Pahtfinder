@@ -45,9 +45,8 @@ final class SearchExecutionTest extends PathfindingTestCase{
 		$start = self::standingAt(2, 2);
 		$target = self::standingAt(20, 2);
 		$evaluator = new WalkNodeEvaluator();
-		self::setUpMob($evaluator, $start);
 
-		$search = (new SyncSearchExecutor())->search($evaluator, self::terrain(self::flatWorld()), new SearchRequest($start, $target, 2000, 64, 0));
+		$search = (new SyncSearchExecutor())->search($evaluator, self::zombie(), self::terrain(self::flatWorld()), new SearchRequest($start, $target, 2000, 64, 0));
 		$resolved = null;
 		$search->getPromise()->onCompletion(function(Path $path) use (&$resolved) : void{
 			$resolved = $path;
@@ -69,11 +68,11 @@ final class SearchExecutionTest extends PathfindingTestCase{
 	public function testCancellingStopsARunningSearch() : void{
 		$start = self::standingAt(2, 2);
 		$evaluator = new WalkNodeEvaluator();
-		self::setUpMob($evaluator, $start);
 
 		$checks = 0;
 		$path = PathFinder::search(
 			$evaluator,
+			self::zombie(),
 			self::flatWorld()->getBlockGetter(),
 			new SearchRequest($start, self::standingAt(28, 28), 2000, 64, 0),
 			function() use (&$checks) : bool{
@@ -89,7 +88,6 @@ final class SearchExecutionTest extends PathfindingTestCase{
 		$start = new Vector3(-2.5, self::FLOOR_Y + 1, -2.5);
 		$target = new Vector3(-15.5, self::FLOOR_Y + 1, -2.5);
 		$evaluator = new WalkNodeEvaluator();
-		self::setUpMob($evaluator, $start);
 
 		$path = self::search($evaluator, $world, $start, $target);
 		self::assertReached($path, $target);

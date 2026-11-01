@@ -22,7 +22,6 @@ declare(strict_types=1);
 
 namespace IvanCraft623\Pathfinder;
 
-use pocketmine\entity\Entity;
 use pocketmine\math\Vector3;
 use pocketmine\world\format\Chunk;
 use pocketmine\world\World;
@@ -208,20 +207,21 @@ class Path{
 		$this->nextNodeIndex = $index;
 	}
 
-	public function getEntityPosAtNode(Entity $entity, int $index) : Vector3{
+	/**
+	 * Where the mob stands at the node: the center of the blocks it spans, at the node's y.
+	 */
+	public function getNodeCenter(int $index) : Vector3{
 		$node = $this->nodes[$index];
-		$x = $node->getX() + (int) ($entity->getSize()->getWidth() + 1.0) * 0.5;
-		$y = $node->getY();
-		$z = $node->getZ() + (int) ($entity->getSize()->getWidth() + 1.0) * 0.5;
-		return new Vector3($x, $y, $z);
+		$offset = $this->nodeWidth * 0.5;
+		return new Vector3($node->x + $offset, $node->y, $node->z + $offset);
 	}
 
 	public function getNodePos(int $index) : Vector3{
 		return $this->nodes[$index]->asVector3();
 	}
 
-	public function getNextEntityPosition(Entity $entity) : Vector3{
-		return $this->getEntityPosAtNode($entity, $this->nextNodeIndex);
+	public function getNextNodeCenter() : Vector3{
+		return $this->getNodeCenter($this->nextNodeIndex);
 	}
 
 	public function getNextNode() : Node{

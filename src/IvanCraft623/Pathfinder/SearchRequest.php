@@ -33,7 +33,8 @@ final class SearchRequest{
 		Vector3 $target,
 		public readonly int $maxVisitedNodes,
 		public readonly float $maxDistanceFromStart,
-		public readonly int $reachRange = 1 //manhattan distance at which the target counts as reached
+		public readonly int $reachRange = 1, //manhattan distance at which the target counts as reached
+		public readonly bool $onGround = true //whether the mob starts on the ground
 	){
 		//A Position would drag its World along when sent to a worker
 		$this->start = $start->asVector3();

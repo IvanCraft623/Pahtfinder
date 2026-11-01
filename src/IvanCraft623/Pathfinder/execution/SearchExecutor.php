@@ -23,9 +23,10 @@ declare(strict_types=1);
 namespace IvanCraft623\Pathfinder\execution;
 
 use IvanCraft623\Pathfinder\evaluator\NodeEvaluator;
+use IvanCraft623\Pathfinder\MovementProfile;
 use IvanCraft623\Pathfinder\SearchRequest;
 use IvanCraft623\Pathfinder\world\Terrain;
 
 interface SearchExecutor{
-	public function search(NodeEvaluator $evaluator, Terrain $terrain, SearchRequest $request) : PathSearch;
+	public function search(NodeEvaluator $evaluator, MovementProfile $profile, Terrain $terrain, SearchRequest $request) : PathSearch;
 }

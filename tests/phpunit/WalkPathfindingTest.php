@@ -27,26 +27,38 @@ use pocketmine\block\VanillaBlocks;
 use pocketmine\math\Vector3;
 
 final class WalkPathfindingTest extends PathfindingTestCase{
-	private static function walker(Vector3 $start, ?BlockPathTypeCostMap $costMap = null) : WalkNodeEvaluator{
-		$evaluator = new WalkNodeEvaluator($costMap);
-		self::setUpMob($evaluator, $start);
-		return $evaluator;
+	private static function walker() : WalkNodeEvaluator{
+		return new WalkNodeEvaluator();
 	}
 
 	public function testDiagonal() : void{
 		$start = self::standingAt(2, 2);
 		$target = self::standingAt(12, 12);
-		$path = self::search(self::walker($start), self::flatWorld(), $start, $target);
+		$path = self::search(self::walker(), self::flatWorld(), $start, $target);
 
 		self::assertReached($path, $target);
 		self::assertContiguous($path);
 		self::assertSame(11, $path->getNodeCount(), "diagonal moves");
 	}
 
+	public function testStartingInTheAirStartsFromTheGroundBelow() : void{
+		$start = new Vector3(2.5, self::FLOOR_Y + 3.4, 2.5);
+		$target = self::standingAt(10, 2);
+		$path = PathFinder::search(
+			self::walker(),
+			self::zombie(),
+			self::flatWorld()->getBlockGetter(),
+			new SearchRequest($start, $target, 2000, 64, 0, onGround: false)
+		);
+
+		self::assertReached($path, $target);
+		self::assertSame(self::FLOOR_Y + 1, $path->getNode(0)->y());
+	}
+
 	public function testReachRangeStopsShort() : void{
 		$start = self::standingAt(2, 2);
 		$target = self::standingAt(20, 2);
-		$path = self::search(self::walker($start), self::flatWorld(), $start, $target, reachRange: 2);
+		$path = self::search(self::walker(), self::flatWorld(), $start, $target, reachRange: 2);
 
 		self::assertSame(PathResult::REACHED, $path->getPathResult());
 		self::assertSame(18, $path->getEndNode()?->x());
@@ -56,7 +68,7 @@ final class WalkPathfindingTest extends PathfindingTestCase{
 		$world = self::flatWorld()->fill(10, 64, 0, 31, 64, 31, VanillaBlocks::STONE());
 		$start = self::standingAt(2, 5);
 		$target = self::standingAt(20, 5, 64);
-		$path = self::search(self::walker($start), $world, $start, $target);
+		$path = self::search(self::walker(), $world, $start, $target);
 
 		self::assertReached($path, $target);
 		self::assertContiguous($path);
@@ -67,7 +79,7 @@ final class WalkPathfindingTest extends PathfindingTestCase{
 		$world = self::flatWorld()->fill(10, 64, 0, 31, 65, 31, VanillaBlocks::STONE());
 		$start = self::standingAt(2, 5);
 		$target = self::standingAt(20, 5, 65);
-		$path = self::search(self::walker($start), $world, $start, $target);
+		$path = self::search(self::walker(), $world, $start, $target);
 
 		self::assertSame(PathResult::BLOCKED, $path->getPathResult());
 		self::assertSame(9, $path->getEndNode()?->x(), "ends at the foot of the cliff");
@@ -77,7 +89,7 @@ final class WalkPathfindingTest extends PathfindingTestCase{
 		$world = self::flatWorld()->fill(10, 64, 0, 10, 65, 20, VanillaBlocks::STONE());
 		$start = self::standingAt(5, 5);
 		$target = self::standingAt(15, 5);
-		$path = self::search(self::walker($start), $world, $start, $target);
+		$path = self::search(self::walker(), $world, $start, $target);
 
 		self::assertReached($path, $target);
 		self::assertContiguous($path);
@@ -89,7 +101,7 @@ final class WalkPathfindingTest extends PathfindingTestCase{
 		$world = self::flatWorld()->fill(0, 64, 0, 9, 66, 31, VanillaBlocks::STONE());
 		$start = self::standingAt(2, 5, 66);
 		$target = self::standingAt(20, 5);
-		$path = self::search(self::walker($start), $world, $start, $target);
+		$path = self::search(self::walker(), $world, $start, $target);
 
 		self::assertReached($path, $target);
 		self::assertTrue(self::pathHas($path, 10, 64, 5), "lands right below the edge");
@@ -99,7 +111,7 @@ final class WalkPathfindingTest extends PathfindingTestCase{
 		$world = self::flatWorld()->fill(0, 64, 0, 9, 67, 31, VanillaBlocks::STONE());
 		$start = self::standingAt(2, 5, 67);
 		$target = self::standingAt(20, 5);
-		$path = self::search(self::walker($start), $world, $start, $target);
+		$path = self::search(self::walker(), $world, $start, $target);
 
 		self::assertSame(PathResult::BLOCKED, $path->getPathResult());
 	}
@@ -107,7 +119,7 @@ final class WalkPathfindingTest extends PathfindingTestCase{
 	public function testExhaustsTheNodeBudget() : void{
 		$start = self::standingAt(2, 2);
 		$target = self::standingAt(28, 28);
-		$path = self::search(self::walker($start), self::flatWorld(), $start, $target, maxVisitedNodes: 5);
+		$path = self::search(self::walker(), self::flatWorld(), $start, $target, maxVisitedNodes: 5);
 
 		self::assertSame(PathResult::EXHAUSTED, $path->getPathResult());
 		self::assertFalse($path->canReach());
@@ -117,7 +129,7 @@ final class WalkPathfindingTest extends PathfindingTestCase{
 	public function testStopsAtMaxDistanceFromStart() : void{
 		$start = self::standingAt(2, 2);
 		$target = self::standingAt(30, 2);
-		$path = self::search(self::walker($start), self::flatWorld(), $start, $target, maxDistanceFromStart: 10);
+		$path = self::search(self::walker(), self::flatWorld(), $start, $target, maxDistanceFromStart: 10);
 
 		self::assertSame(PathResult::BLOCKED, $path->getPathResult());
 		self::assertLessThanOrEqual(12, $path->getEndNode()?->x());
@@ -130,7 +142,7 @@ final class WalkPathfindingTest extends PathfindingTestCase{
 			->fill(20, 64, 5, 22, 65, 7, VanillaBlocks::AIR());
 		$start = self::standingAt(5, 6);
 		$target = self::standingAt(21, 6);
-		$path = self::search(self::walker($start), $world, $start, $target);
+		$path = self::search(self::walker(), $world, $start, $target);
 
 		self::assertSame(PathResult::BLOCKED, $path->getPathResult());
 		self::assertSame(18, $path->getEndNode()?->x(), "against the room's wall");
@@ -150,10 +162,7 @@ final class WalkPathfindingTest extends PathfindingTestCase{
 	public function testOpensWoodenDoors() : void{
 		$start = self::standingAt(5, 5);
 		$target = self::standingAt(15, 5);
-		$evaluator = self::walker($start);
-		$evaluator->setCanOpenDoors();
-		$evaluator->setCanPassDoors();
-		$path = self::search($evaluator, self::doorWorld(), $start, $target);
+		$path = self::search(self::walker(), self::doorWorld(), $start, $target, profile: self::zombie(canPassDoors: true, canOpenDoors: true));
 
 		self::assertReached($path, $target);
 		self::assertTrue(self::pathHas($path, 10, 64, 5));
@@ -163,9 +172,7 @@ final class WalkPathfindingTest extends PathfindingTestCase{
 	public function testClosedDoorBlocksMobsThatCannotOpenIt() : void{
 		$start = self::standingAt(5, 5);
 		$target = self::standingAt(15, 5);
-		$evaluator = self::walker($start);
-		$evaluator->setCanPassDoors();
-		$path = self::search($evaluator, self::doorWorld(), $start, $target);
+		$path = self::search(self::walker(), self::doorWorld(), $start, $target, profile: self::zombie(canPassDoors: true));
 
 		self::assertSame(PathResult::BLOCKED, $path->getPathResult());
 	}
@@ -173,10 +180,7 @@ final class WalkPathfindingTest extends PathfindingTestCase{
 	public function testIronDoorsStayClosed() : void{
 		$start = self::standingAt(5, 5);
 		$target = self::standingAt(15, 5);
-		$evaluator = self::walker($start);
-		$evaluator->setCanOpenDoors();
-		$evaluator->setCanPassDoors();
-		$path = self::search($evaluator, self::doorWorld(true), $start, $target);
+		$path = self::search(self::walker(), self::doorWorld(true), $start, $target, profile: self::zombie(canPassDoors: true, canOpenDoors: true));
 
 		self::assertSame(PathResult::BLOCKED, $path->getPathResult());
 	}
@@ -185,7 +189,7 @@ final class WalkPathfindingTest extends PathfindingTestCase{
 		$world = self::flatWorld()->fill(10, 64, 0, 10, 64, 31, VanillaBlocks::OAK_FENCE());
 		$start = self::standingAt(5, 5);
 		$target = self::standingAt(15, 5);
-		$path = self::search(self::walker($start), $world, $start, $target);
+		$path = self::search(self::walker(), $world, $start, $target);
 
 		self::assertSame(PathResult::BLOCKED, $path->getPathResult());
 	}
@@ -199,12 +203,9 @@ final class WalkPathfindingTest extends PathfindingTestCase{
 		$start = self::standingAt(5, 5);
 		$target = self::standingAt(18, 5);
 
-		$path = self::search(self::walker($start), $world, $start, $target);
-		self::assertReached($path, $target);
-
 		$costMap = new BlockPathTypeCostMap();
 		$costMap->setPathfindingMalus(BlockPathType::WATER, -1);
-		$dryPath = self::search(self::walker($start, $costMap), $world, $start, $target);
+		$dryPath = self::search(self::walker(), $world, $start, $target, profile: self::zombie(costMap: $costMap));
 		self::assertReached($dryPath, $target);
 		self::assertTrue(self::pathHas($dryPath, 11, 64, 20), "crosses at the dry gap");
 	}
@@ -217,12 +218,10 @@ final class WalkPathfindingTest extends PathfindingTestCase{
 		$start = self::standingAt(5, 5);
 		$target = self::standingAt(15, 5);
 
-		$narrow = self::search(self::walker($start), $world, $start, $target);
+		$narrow = self::search(self::walker(), $world, $start, $target);
 		self::assertReached($narrow, $target);
 
-		$evaluator = new WalkNodeEvaluator();
-		self::setUpMob($evaluator, $start, width: 1.4, height: 1.4);
-		$wide = self::search($evaluator, $world, $start, $target);
+		$wide = self::search(self::walker(), $world, $start, $target, profile: self::zombie(1.4, 1.4));
 		self::assertSame(PathResult::BLOCKED, $wide->getPathResult());
 	}
 }

@@ -22,13 +22,10 @@ declare(strict_types=1);
 
 namespace IvanCraft623\Pathfinder;
 
-use IvanCraft623\Pathfinder\evaluator\EntityNodeEvaluator;
 use IvanCraft623\Pathfinder\evaluator\NodeEvaluator;
 use IvanCraft623\Pathfinder\world\BlockGetter;
 use PHPUnit\Framework\TestCase;
 use pocketmine\block\VanillaBlocks;
-use pocketmine\entity\EntitySizeInfo;
-use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Vector3;
 use function abs;
 use function count;
@@ -44,18 +41,22 @@ abstract class PathfindingTestCase extends TestCase{
 	}
 
 	/**
-	 * Sets up the evaluator for a zombie sized mob standing on the ground at $start.
+	 * A zombie sized mob.
 	 */
-	protected static function setUpMob(EntityNodeEvaluator $evaluator, Vector3 $start, float $width = 0.6, float $height = 1.95) : void{
-		$evaluator->setEntitySize(new EntitySizeInfo($height, $width));
-		$halfWidth = $width / 2;
-		$evaluator->setEntityBoundingBox(new AxisAlignedBB(
-			$start->x - $halfWidth, $start->y, $start->z - $halfWidth,
-			$start->x + $halfWidth, $start->y + $height, $start->z + $halfWidth
-		));
-		$evaluator->setEntityOnGround(true);
-		$evaluator->setMaxUpStep(0.6);
-		$evaluator->setMaxFallDistance(3);
+	protected static function zombie(
+		float $width = 0.6,
+		float $height = 1.95,
+		?BlockPathTypeCostMap $costMap = null,
+		bool $canPassDoors = false,
+		bool $canOpenDoors = false
+	) : MovementProfile{
+		return new MovementProfile(
+			$width,
+			$height,
+			costMap: $costMap ?? new BlockPathTypeCostMap(),
+			canPassDoors: $canPassDoors,
+			canOpenDoors: $canOpenDoors
+		);
 	}
 
 	/**
@@ -75,10 +76,12 @@ abstract class PathfindingTestCase extends TestCase{
 		Vector3 $target,
 		int $maxVisitedNodes = 2000,
 		float $maxDistanceFromStart = 64,
-		int $reachRange = 0
+		int $reachRange = 0,
+		?MovementProfile $profile = null
 	) : Path{
 		return PathFinder::search(
 			$evaluator,
+			$profile ?? self::zombie(),
 			$world instanceof TestWorld ? $world->getBlockGetter() : $world,
 			new SearchRequest($start, $target, $maxVisitedNodes, $maxDistanceFromStart, $reachRange)
 		);

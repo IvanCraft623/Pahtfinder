@@ -25,6 +25,7 @@ namespace IvanCraft623\Pathfinder\task;
 use Closure;
 
 use IvanCraft623\Pathfinder\evaluator\NodeEvaluator;
+use IvanCraft623\Pathfinder\MovementProfile;
 use IvanCraft623\Pathfinder\Path;
 use IvanCraft623\Pathfinder\PathFinder;
 use IvanCraft623\Pathfinder\PathResult;
@@ -64,12 +65,14 @@ class AsyncPathFinderTask extends AsyncTask implements ChunkRequester {
 
 	/**
 	 * @param string $nodeEvaluator serialized
+	 * @param string $profile       serialized {@link MovementProfile}
 	 * @param string $request       serialized {@link SearchRequest}
 	 * @phpstan-param ThreadSafeArray<int, string> $sentChunks World::chunkHash() => serialized chunk
 	 * @phpstan-param Closure(Path $path) : void $onCompletion
 	 */
 	public function __construct(
 		private string $nodeEvaluator,
+		private string $profile,
 		private string $request,
 		private ThreadSafeArray $sentChunks,
 		Terrain $terrain, //answers the chunk requests
@@ -114,7 +117,10 @@ class AsyncPathFinderTask extends AsyncTask implements ChunkRequester {
 		}
 		$blockGetter = new ChunkBlockGetter(new RequestingChunkSource($chunks, $this), $this->minY, $this->maxY);
 
-		return PathFinder::search($evaluator, $blockGetter, $this->getRequest(), fn() : bool => $this->cancelled);
+		/** @var MovementProfile $profile */
+		$profile = igbinary_unserialize($this->profile);
+
+		return PathFinder::search($evaluator, $profile, $blockGetter, $this->getRequest(), fn() : bool => $this->cancelled);
 	}
 
 	private function getRequest() : SearchRequest{

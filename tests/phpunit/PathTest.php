@@ -117,6 +117,17 @@ final class PathTest extends TestCase{
 		self::assertCount(4, $chunks);
 	}
 
+	public function testNodeCenter() : void{
+		$path = self::path([[3, 64, -5], [4, 64, -5]], 1);
+		self::assertTrue($path->getNodeCenter(0)->equals(new Vector3(3.5, 64, -4.5)));
+		self::assertTrue($path->getNextNodeCenter()->equals(new Vector3(3.5, 64, -4.5)));
+		$path->advance();
+		self::assertTrue($path->getNextNodeCenter()->equals(new Vector3(4.5, 64, -4.5)));
+
+		$wide = self::path([[3, 64, -5]], 2);
+		self::assertTrue($wide->getNodeCenter(0)->equals(new Vector3(4, 64, -4)), "a 2x2 node's center is its corner block's far corner");
+	}
+
 	public function testEquals() : void{
 		$a = self::path([[0, 64, 0], [1, 64, 0]]);
 		self::assertTrue($a->equals(self::path([[0, 64, 0], [1, 64, 0]])));

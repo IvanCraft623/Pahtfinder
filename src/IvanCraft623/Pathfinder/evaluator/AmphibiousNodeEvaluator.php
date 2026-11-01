@@ -23,6 +23,7 @@ declare(strict_types=1);
 namespace IvanCraft623\Pathfinder\evaluator;
 
 use IvanCraft623\Pathfinder\BlockPathType;
+use IvanCraft623\Pathfinder\BlockPathTypeCostMap;
 use IvanCraft623\Pathfinder\Node;
 use IvanCraft623\Pathfinder\Target;
 use IvanCraft623\Pathfinder\world\BlockGetter;
@@ -34,27 +35,19 @@ use function max;
 use function min;
 
 /**
- * Swims in 3D through water and walks on land.
+ * Swims in 3D through water and walks on land; use with {@link BlockPathTypeCostMap::amphibious()} costs.
  */
 class AmphibiousNodeEvaluator extends WalkNodeEvaluator {
 
-	public function prepare(BlockGetter $blockGetter, Vector3 $startPosition) : void{
-		parent::prepare($blockGetter, $startPosition);
-
-		$this->pathTypeCostMap->setPathfindingMalus(BlockPathType::WATER, 0.0);
-		$this->pathTypeCostMap->setPathfindingMalus(BlockPathType::WALKABLE, 6.0);
-		$this->pathTypeCostMap->setPathfindingMalus(BlockPathType::WATER_BORDER, 4.0);
-	}
-
 	public function getStart() : Node{
-		$bb = $this->getEntityBoundingBox();
+		$bb = $this->context->getStartBoundingBox();
 		return $this->getStartNode(new Vector3(floor($bb->minX), floor($bb->minY + 0.5), floor($bb->minZ)));
 	}
 
 	public function getGoal(float $x, float $y, float $z) : Target{
 		return $this->getTargetFromNode($this->getNodeAt(
 			(int) floor($x),
-			max($this->blockGetter->minY, min($this->blockGetter->maxY - 1, (int) floor($y + 0.5))),
+			max($this->context->blockGetter->minY, min($this->context->blockGetter->maxY - 1, (int) floor($y + 0.5))),
 			(int) floor($z)
 		));
 	}
@@ -65,13 +58,13 @@ class AmphibiousNodeEvaluator extends WalkNodeEvaluator {
 	public function getNeighbors(Node $node) : array{
 		$nodes = parent::getNeighbors($node);
 
-		$pathType = $this->getCachedBlockPathType($this->blockGetter, $node->x(), $node->y(), $node->z());
-		$pathTypeAbove = $this->blockGetter->isInWorld($node->x(), $node->y() + 1, $node->z())
-			? $this->getCachedBlockPathType($this->blockGetter, $node->x(), $node->y() + 1, $node->z())
+		$pathType = $this->getCachedBlockPathType($this->context->blockGetter, $node->x(), $node->y(), $node->z());
+		$pathTypeAbove = $this->context->blockGetter->isInWorld($node->x(), $node->y() + 1, $node->z())
+			? $this->getCachedBlockPathType($this->context->blockGetter, $node->x(), $node->y() + 1, $node->z())
 			: BlockPathType::BLOCKED;
 
-		$maxUpStep = $this->pathTypeCostMap->getPathfindingMalus($pathTypeAbove) >= 0 && $pathType !== BlockPathType::STICKY_HONEY
-			? (int) floor(max(1, $this->getMaxUpStep()))
+		$maxUpStep = $this->getPathfindingMalus($pathTypeAbove) >= 0 && $pathType !== BlockPathType::STICKY_HONEY
+			? (int) floor(max(1, $this->context->profile->maxUpStep))
 			: 0;
 
 		$floorLevel = $this->getFloorLevel($node);
@@ -96,7 +89,7 @@ class AmphibiousNodeEvaluator extends WalkNodeEvaluator {
 		return true;
 	}
 
-	public function getBlockPathType(BlockGetter $blockGetter, int $x, int $y, int $z) : BlockPathType{
+	public function getBlockPathType(BlockGetter $blockGetter, int $x, int $y, int $z, Vector3 $mobPosition) : BlockPathType{
 		if (static::getBlockPathTypeRaw($blockGetter, $x, $y, $z) !== BlockPathType::WATER) {
 			return static::getBlockPathTypeStatic($blockGetter, $x, $y, $z);
 		}

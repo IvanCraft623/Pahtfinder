@@ -54,7 +54,7 @@ use function floor;
 use function max;
 use function min;
 
-class WalkNodeEvaluator extends EntityNodeEvaluator {
+class WalkNodeEvaluator extends NodeEvaluator {
 
 	public const DEFAULT_MOB_JUMP_HEIGHT = 1.125;
 
@@ -68,35 +68,35 @@ class WalkNodeEvaluator extends EntityNodeEvaluator {
 	}
 
 	public function getStart() : Node{
-		$position = clone $this->startPosition;
+		$position = clone $this->context->start;
 
 		$y = (int) floor($position->y);
-		$block = $this->blockGetter->getBlock($position);
+		$block = $this->context->blockGetter->getBlock($position);
 
-		if (!($block instanceof Liquid && $this->canStandOnFluid($block))) {
-			if ($this->canFloat() && $block instanceof Water) {
+		if (!($block instanceof Liquid && $this->context->profile->canStandOnFluid($block))) {
+			if ($this->context->profile->canFloat && $block instanceof Water) {
 				while (true) {
 					if (!$block instanceof Water) {
 						--$y;
 						break;
 					}
-					$block = $this->blockGetter->getBlockAt((int) floor($position->x), ++$y, (int) floor($position->z));
+					$block = $this->context->blockGetter->getBlockAt((int) floor($position->x), ++$y, (int) floor($position->z));
 				}
-			} elseif ($this->isEntityOnGround()) {
-				$y = (int) floor($this->startPosition->y + 0.5);
+			} elseif ($this->context->onGround) {
+				$y = (int) floor($this->context->start->y + 0.5);
 			} else {
-				$pos = new Vector3((int) floor($this->startPosition->x), (int) floor($this->startPosition->y) + 1, (int) floor($this->startPosition->z));
+				$pos = new Vector3((int) floor($this->context->start->x), (int) floor($this->context->start->y) + 1, (int) floor($this->context->start->z));
 
-				while ((($b = $this->blockGetter->getBlock($pos))->getTypeId() === BlockTypeIds::AIR || Utils::isPathfindable($b, PathComputationType::LAND())) && $pos->y > World::Y_MIN) {
+				while ((($b = $this->context->blockGetter->getBlock($pos))->getTypeId() === BlockTypeIds::AIR || Utils::isPathfindable($b, PathComputationType::LAND())) && $pos->y > World::Y_MIN) {
 					$pos = $pos->down();
 				}
 
 				$y = $pos->y + 1;
 			}
 		} else {
-			while ($block instanceof Liquid && $this->canStandOnFluid($block)) {
+			while ($block instanceof Liquid && $this->context->profile->canStandOnFluid($block)) {
 				$position->y = ++$y;
-				$block = $this->blockGetter->getBlock($position);
+				$block = $this->context->blockGetter->getBlock($position);
 			}
 
 			--$y;
@@ -109,12 +109,12 @@ class WalkNodeEvaluator extends EntityNodeEvaluator {
 	protected function getStartNode(Vector3 $position) : Node{
 		$node = $this->getNodeAt(
 			(int) max(Limits::INT32_MIN, min(Limits::INT32_MAX, (int) floor($position->x))),
-			(int) max($this->blockGetter->minY, min($this->blockGetter->maxY - 1, (int) floor($position->y))),
+			(int) max($this->context->blockGetter->minY, min($this->context->blockGetter->maxY - 1, (int) floor($position->y))),
 			(int) max(Limits::INT32_MIN, min(Limits::INT32_MAX, (int) floor($position->z)))
 		);
 
-		$node->type = $this->getCachedBlockPathType($this->blockGetter, $node->x(), $node->y(), $node->z());
-		$node->costMalus = $this->pathTypeCostMap->getPathfindingMalus($node->type);
+		$node->type = $this->getCachedBlockPathType($this->context->blockGetter, $node->x(), $node->y(), $node->z());
+		$node->costMalus = $this->getPathfindingMalus($node->type);
 
 		return $node;
 	}
@@ -122,7 +122,7 @@ class WalkNodeEvaluator extends EntityNodeEvaluator {
 	public function getGoal(float $x, float $y, float $z) : Target{
 		return $this->getTargetFromNode($this->getNodeAt(
 			(int) max(Limits::INT32_MIN, min(Limits::INT32_MAX, (int) floor($x))),
-			(int) max($this->blockGetter->minY, min($this->blockGetter->maxY - 1, (int) floor($y))),
+			(int) max($this->context->blockGetter->minY, min($this->context->blockGetter->maxY - 1, (int) floor($y))),
 			(int) max(Limits::INT32_MIN, min(Limits::INT32_MAX, (int) floor($z)))
 		));
 	}
@@ -138,14 +138,14 @@ class WalkNodeEvaluator extends EntityNodeEvaluator {
 		$nodeY = $node->y();
 		$nodeZ = $node->z();
 
-		$pathType = $this->getCachedBlockPathType($this->blockGetter, $nodeX, $nodeY, $nodeZ);
+		$pathType = $this->getCachedBlockPathType($this->context->blockGetter, $nodeX, $nodeY, $nodeZ);
 		$aboveY = $nodeY + 1;
-		$pathTypeAbove = $this->blockGetter->isInWorld($nodeX, $aboveY, $nodeZ)
-			? $this->getCachedBlockPathType($this->blockGetter, $nodeX, $aboveY, $nodeZ)
+		$pathTypeAbove = $this->context->blockGetter->isInWorld($nodeX, $aboveY, $nodeZ)
+			? $this->getCachedBlockPathType($this->context->blockGetter, $nodeX, $aboveY, $nodeZ)
 			: BlockPathType::BLOCKED;
 
-		if ($this->pathTypeCostMap->getPathfindingMalus($pathTypeAbove) >= 0 && !$pathType->equals(BlockPathType::STICKY_HONEY)) {
-			$maxUpStep = (int) floor(max(1, $this->getMaxUpStep()));
+		if ($this->getPathfindingMalus($pathTypeAbove) >= 0 && !$pathType->equals(BlockPathType::STICKY_HONEY)) {
+			$maxUpStep = (int) floor(max(1, $this->context->profile->maxUpStep));
 		}
 
 		$floorLevel = $this->getFloorLevel($node);
@@ -201,7 +201,7 @@ class WalkNodeEvaluator extends EntityNodeEvaluator {
 		) {
 			$isFence = $neighbor1->type->equals(BlockPathType::FENCE) &&
 				$neighbor2->type->equals(BlockPathType::FENCE) &&
-				$this->entitySizeInfo->getWidth() < 0.5;
+				$this->context->profile->width < 0.5;
 			return $diagonal->costMalus >= 0 &&
 				($neighbor1->y < $node->y || $neighbor1->costMalus >= 0 || $isFence) &&
 				($neighbor2->y < $node->y || $neighbor2->costMalus >= 0 || $isFence);
@@ -216,8 +216,8 @@ class WalkNodeEvaluator extends EntityNodeEvaluator {
 	}
 
 	private function canReachWithoutCollision(Node $node) : bool{
-		$bb = clone $this->getEntityBoundingBox();
-		$mobPos = $this->startPosition;
+		$bb = clone $this->context->getStartBoundingBox();
+		$mobPos = $this->context->start;
 
 		$relativePos = new Vector3(
 			$node->x - $mobPos->x + $bb->getXLength() / 2,
@@ -240,10 +240,10 @@ class WalkNodeEvaluator extends EntityNodeEvaluator {
 
 	protected function getFloorLevel(Vector3 $pos) : float{
 		//TODO: waterlogging check
-		if (($this->canFloat() || $this->isAmphibious()) && $this->blockGetter->getBlock($pos) instanceof Water) {
+		if (($this->context->profile->canFloat || $this->isAmphibious()) && $this->context->blockGetter->getBlock($pos) instanceof Water) {
 			return $pos->getY() + 0.5;
 		}
-		return static::getFloorLevelAt($this->blockGetter, $pos);
+		return static::getFloorLevelAt($this->context->blockGetter, $pos);
 	}
 
 	public static function getFloorLevelAt(BlockGetter $blockGetter, Vector3 $pos) : float{
@@ -258,7 +258,7 @@ class WalkNodeEvaluator extends EntityNodeEvaluator {
 	}
 
 	public function findAcceptedNode(int $x, int $y, int $z, int $remainingJumpHeight, float $floorLevel, int $facing, BlockPathType $originPathType) : ?Node{
-		if (!$this->blockGetter->isInWorld($x, $y, $z)) {
+		if (!$this->context->blockGetter->isInWorld($x, $y, $z)) {
 			return null;
 		}
 
@@ -269,8 +269,8 @@ class WalkNodeEvaluator extends EntityNodeEvaluator {
 			return null;
 		}
 
-		$currentPathType = $this->getCachedBlockPathType($this->blockGetter, $x, $y, $z);
-		$malus = $this->pathTypeCostMap->getPathfindingMalus($currentPathType);
+		$currentPathType = $this->getCachedBlockPathType($this->context->blockGetter, $x, $y, $z);
+		$malus = $this->getPathfindingMalus($currentPathType);
 
 		if ($malus >= 0) {
 			$resultNode = $this->getNodeAndUpdateCostToMax($x, $y, $z, $currentPathType, $malus);
@@ -286,13 +286,13 @@ class WalkNodeEvaluator extends EntityNodeEvaluator {
 		if (!$currentPathType->equals(BlockPathType::WALKABLE) && (!$this->isAmphibious() || !$currentPathType->equals(BlockPathType::WATER))) {
 			if (($resultNode === null || $resultNode->costMalus < 0) &&
 				$remainingJumpHeight > 0 &&
-				(!$currentPathType->equals(BlockPathType::FENCE) || $this->canWalkOverFences()) &&
+				(!$currentPathType->equals(BlockPathType::FENCE) || $this->context->profile->canWalkOverFences) &&
 				!$currentPathType->equals(BlockPathType::UNPASSABLE_RAIL) &&
 				!$currentPathType->equals(BlockPathType::TRAPDOOR) &&
 				!$currentPathType->equals(BlockPathType::POWDER_SNOW)
 			) {
 				$resultNode = $this->findAcceptedNode($x, $y + 1, $z, $remainingJumpHeight - 1, $floorLevel, $facing, $originPathType);
-				$width = $this->entitySizeInfo->getWidth();
+				$width = $this->context->profile->width;
 				if ($resultNode !== null &&
 					($resultNode->type->equals(BlockPathType::OPEN) || $resultNode->type->equals(BlockPathType::WALKABLE))
 				) {
@@ -307,7 +307,7 @@ class WalkNodeEvaluator extends EntityNodeEvaluator {
 						minY: min($y1, $y2) + 0.001,
 						minZ: min($sidePos->z, $originSidePos->z) - $halfWidth,
 						maxX: max($sidePos->x, $originSidePos->x) + $halfWidth,
-						maxY: $this->entitySizeInfo->getHeight() + max($y1, $y2) - 0.002,
+						maxY: $this->context->profile->height + max($y1, $y2) - 0.002,
 						maxZ: max($sidePos->z, $originSidePos->z) + $halfWidth
 					);
 					if ($this->hasCollisions($bb)) {
@@ -316,20 +316,20 @@ class WalkNodeEvaluator extends EntityNodeEvaluator {
 				}
 			}
 
-			if (!$this->isAmphibious() && $currentPathType->equals(BlockPathType::WATER) && !$this->canFloat()) {
-				if ($y - 1 < $this->blockGetter->minY ||
-					!$this->getCachedBlockPathType($this->blockGetter, $x, $y - 1, $z)->equals(BlockPathType::WATER)
+			if (!$this->isAmphibious() && $currentPathType->equals(BlockPathType::WATER) && !$this->context->profile->canFloat) {
+				if ($y - 1 < $this->context->blockGetter->minY ||
+					!$this->getCachedBlockPathType($this->context->blockGetter, $x, $y - 1, $z)->equals(BlockPathType::WATER)
 				) {
 					return $resultNode;
 				}
 
 				while ($y > World::Y_MIN) {
-					$currentPathType = $this->getCachedBlockPathType($this->blockGetter, $x, --$y, $z);
+					$currentPathType = $this->getCachedBlockPathType($this->context->blockGetter, $x, --$y, $z);
 					if (!$currentPathType->equals(BlockPathType::WATER)) {
 						return $resultNode;
 					}
 
-					$resultNode = $this->getNodeAndUpdateCostToMax($x, $y, $z, $currentPathType, $this->pathTypeCostMap->getPathfindingMalus($currentPathType));
+					$resultNode = $this->getNodeAndUpdateCostToMax($x, $y, $z, $currentPathType, $this->getPathfindingMalus($currentPathType));
 				}
 			}
 
@@ -342,12 +342,12 @@ class WalkNodeEvaluator extends EntityNodeEvaluator {
 						return $this->getBlockedNode($x, $startY, $z);
 					}
 
-					if ($fallDistance++ >= $this->getMaxFallDistance()) {
+					if ($fallDistance++ >= $this->context->profile->maxFallDistance) {
 						return $this->getBlockedNode($x, $y, $z);
 					}
 
-					$currentPathType = $this->getCachedBlockPathType($this->blockGetter, $x, $y, $z);
-					$malus = $this->pathTypeCostMap->getPathfindingMalus($currentPathType);
+					$currentPathType = $this->getCachedBlockPathType($this->context->blockGetter, $x, $y, $z);
+					$malus = $this->getPathfindingMalus($currentPathType);
 					if (!$currentPathType->equals(BlockPathType::OPEN) && $malus >= 0) {
 						$resultNode = $this->getNodeAndUpdateCostToMax($x, $y, $z, $currentPathType, $malus);
 						break;
@@ -371,7 +371,7 @@ class WalkNodeEvaluator extends EntityNodeEvaluator {
 	}
 
 	private function getMobJumpHeight() : float{
-		return max(static::DEFAULT_MOB_JUMP_HEIGHT, $this->getMaxUpStep());
+		return max(static::DEFAULT_MOB_JUMP_HEIGHT, $this->context->profile->maxUpStep);
 	}
 
 	private function getNodeAndUpdateCostToMax(int $x, int $y, int $z, BlockPathType $pathType, float $malus) : Node{
@@ -391,13 +391,13 @@ class WalkNodeEvaluator extends EntityNodeEvaluator {
 	}
 
 	private function hasCollisions(AxisAlignedBB $bb) : bool{
-		if (!$this->blockGetter->isInWorld((int) floor($bb->minX), (int) floor($bb->minY), (int) floor($bb->minZ)) ||
-			!$this->blockGetter->isInWorld((int) floor($bb->maxX), (int) floor($bb->maxY), (int) floor($bb->maxZ))
+		if (!$this->context->blockGetter->isInWorld((int) floor($bb->minX), (int) floor($bb->minY), (int) floor($bb->minZ)) ||
+			!$this->context->blockGetter->isInWorld((int) floor($bb->maxX), (int) floor($bb->maxY), (int) floor($bb->maxZ))
 		) {
 			return true;
 		}
 
-		foreach ($this->blockGetter->getCollisionBlocks($bb) as $block) {
+		foreach ($this->context->blockGetter->getCollisionBlocks($bb) as $block) {
 			if ($block->isSolid()) {
 				return true;
 			}
@@ -410,11 +410,11 @@ class WalkNodeEvaluator extends EntityNodeEvaluator {
 	 * @param EnumSet<BlockPathType> $pathTypes
 	 */
 	public function getBlockPathTypes(BlockGetter $blockGetter, int $startX, int $startY, int $startZ, EnumSet $pathTypes, BlockPathType $pathType, Vector3 $mobPos) : BlockPathType{
-		for ($currentX = 0; $currentX < $this->entityWidth; ++$currentX) {
-			for ($currentY = 0; $currentY < $this->entityHeight; ++$currentY) {
-				for($currentZ = 0; $currentZ < $this->entityDepth; ++$currentZ) {
+		for ($currentX = 0; $currentX < $this->context->profile->nodeWidth; ++$currentX) {
+			for ($currentY = 0; $currentY < $this->context->profile->nodeHeight; ++$currentY) {
+				for($currentZ = 0; $currentZ < $this->context->profile->nodeWidth; ++$currentZ) {
 					$currentPathType = $this->evaluateBlockPathType($blockGetter, $mobPos,
-						$this->getBlockPathType($blockGetter, $startX + $currentX, $startY + $currentY, $startZ + $currentZ)
+						$this->getBlockPathType($blockGetter, $startX + $currentX, $startY + $currentY, $startZ + $currentZ, $mobPos)
 					);
 
 					if ($currentX === 0 && $currentY === 0 && $currentZ === 0) {
@@ -430,8 +430,8 @@ class WalkNodeEvaluator extends EntityNodeEvaluator {
 	}
 
 	protected function evaluateBlockPathType(BlockGetter $blockGetter, Vector3 $mobPos, BlockPathType $pathType) : BlockPathType{
-		$canPassDoors = $this->canPassDoors();
-		if ($pathType->equals(BlockPathType::DOOR_WOOD_CLOSED) && $this->canOpenDoors() && $canPassDoors) {
+		$canPassDoors = $this->context->profile->canPassDoors;
+		if ($pathType->equals(BlockPathType::DOOR_WOOD_CLOSED) && $this->context->profile->canOpenDoors && $canPassDoors) {
 			$pathType = BlockPathType::WALKABLE_DOOR;
 		} elseif ($pathType->equals(BlockPathType::DOOR_OPEN) && !$canPassDoors) {
 			$pathType = BlockPathType::BLOCKED;
@@ -459,7 +459,7 @@ class WalkNodeEvaluator extends EntityNodeEvaluator {
 		/** @var EnumSet<BlockPathType> $pathTypes */
 		$pathTypes = $this->pathTypes;
 		$pathTypes->clear();
-		$currentPathType = $this->getBlockPathTypes($blockGetter, $x, $y, $z, $pathTypes, BlockPathType::BLOCKED, $this->startPosition->floor());
+		$currentPathType = $this->getBlockPathTypes($blockGetter, $x, $y, $z, $pathTypes, BlockPathType::BLOCKED, $this->context->start->floor());
 
 		foreach ([BlockPathType::FENCE, BlockPathType::UNPASSABLE_RAIL] as $unpassableType) {
 			if ($pathTypes->contains($unpassableType)) {
@@ -468,9 +468,9 @@ class WalkNodeEvaluator extends EntityNodeEvaluator {
 		}
 
 		$bestPathType = BlockPathType::BLOCKED;
-		$bestMalus = $this->pathTypeCostMap->getPathfindingMalus($bestPathType);
+		$bestMalus = $this->getPathfindingMalus($bestPathType);
 		foreach ($pathTypes as $pathType) {
-			$malus = $this->pathTypeCostMap->getPathfindingMalus($pathType);
+			$malus = $this->getPathfindingMalus($pathType);
 			if ($malus < 0) {
 				return $pathType;
 			}
@@ -483,10 +483,10 @@ class WalkNodeEvaluator extends EntityNodeEvaluator {
 
 		return ($currentPathType->equals(BlockPathType::OPEN) &&
 			$bestMalus === 0.0 &&
-			$this->entityWidth <= 1) ? BlockPathType::OPEN : $bestPathType;
+			$this->context->profile->nodeWidth <= 1) ? BlockPathType::OPEN : $bestPathType;
 	}
 
-	public function getBlockPathType(BlockGetter $blockGetter, int $x, int $y, int $z) : BlockPathType{
+	public function getBlockPathType(BlockGetter $blockGetter, int $x, int $y, int $z, Vector3 $mobPosition) : BlockPathType{
 		return static::getBlockPathTypeStatic($blockGetter, $x, $y, $z);
 	}
 

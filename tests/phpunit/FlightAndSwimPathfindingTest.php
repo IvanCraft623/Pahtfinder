@@ -34,7 +34,6 @@ final class FlightAndSwimPathfindingTest extends PathfindingTestCase{
 		$start = self::standingAt(5, 15);
 		$target = self::standingAt(15, 15);
 		$evaluator = new FlightNodeEvaluator();
-		self::setUpMob($evaluator, $start);
 		$path = self::search($evaluator, $world, $start, $target);
 
 		self::assertReached($path, $target);
@@ -47,6 +46,18 @@ final class FlightAndSwimPathfindingTest extends PathfindingTestCase{
 	}
 
 	/**
+	 * Main thread callers classify blocks with an evaluator that never ran a search.
+	 */
+	public function testFlightClassifiesOutsideASearch() : void{
+		$world = (new TestWorld())->fill(0, 63, 0, 1, 63, 0, VanillaBlocks::OAK_FENCE());
+		$evaluator = new FlightNodeEvaluator();
+		$mobPosition = new Vector3(0.5, 64, 0.5);
+
+		self::assertSame(BlockPathType::FENCE, $evaluator->getBlockPathType($world->getBlockGetter(), 1, 64, 0, $mobPosition));
+		self::assertSame(BlockPathType::OPEN, $evaluator->getBlockPathType($world->getBlockGetter(), 0, 64, 0, $mobPosition), "the mob's own block");
+	}
+
+	/**
 	 * Stone floor with a pool, water from y=58 to the floor level, x 10..20, z 1..10.
 	 */
 	private static function poolWorld() : TestWorld{
@@ -55,12 +66,15 @@ final class FlightAndSwimPathfindingTest extends PathfindingTestCase{
 			->fill(10, 58, 1, 20, self::FLOOR_Y, 10, VanillaBlocks::WATER());
 	}
 
+	private static function axolotl() : MovementProfile{
+		return new MovementProfile(0.75, 0.42, costMap: BlockPathTypeCostMap::amphibious());
+	}
+
 	public function testAmphibiousMobSwimsDown() : void{
 		$start = self::standingAt(5, 5);
 		$target = new Vector3(15.5, 59, 5.5);
 		$evaluator = new AmphibiousNodeEvaluator();
-		self::setUpMob($evaluator, $start);
-		$path = self::search($evaluator, self::poolWorld(), $start, $target);
+		$path = self::search($evaluator, self::poolWorld(), $start, $target, profile: self::axolotl());
 
 		self::assertReached($path, $target);
 		self::assertContiguous($path);
@@ -74,13 +88,12 @@ final class FlightAndSwimPathfindingTest extends PathfindingTestCase{
 		$start = self::standingAt(5, 5);
 		$target = new Vector3(15.5, 58, 5.5);
 		$evaluator = new AmphibiousNodeEvaluator();
-		self::setUpMob($evaluator, $start);
 
-		$exact = self::search($evaluator, self::poolWorld(), $start, $target);
+		$exact = self::search($evaluator, self::poolWorld(), $start, $target, profile: self::axolotl());
 		self::assertSame(PathResult::BLOCKED, $exact->getPathResult());
 		self::assertSame(59, $exact->getEndNode()?->y());
 
-		$withinReach = self::search($evaluator, self::poolWorld(), $start, $target, reachRange: 1);
+		$withinReach = self::search($evaluator, self::poolWorld(), $start, $target, reachRange: 1, profile: self::axolotl());
 		self::assertSame(PathResult::REACHED, $withinReach->getPathResult());
 	}
 
@@ -88,8 +101,7 @@ final class FlightAndSwimPathfindingTest extends PathfindingTestCase{
 		$start = new Vector3(15.5, 58, 5.5);
 		$target = self::standingAt(25, 5);
 		$evaluator = new AmphibiousNodeEvaluator();
-		self::setUpMob($evaluator, $start);
-		$path = self::search($evaluator, self::poolWorld(), $start, $target);
+		$path = self::search($evaluator, self::poolWorld(), $start, $target, profile: self::axolotl());
 
 		self::assertReached($path, $target);
 		self::assertContiguous($path);

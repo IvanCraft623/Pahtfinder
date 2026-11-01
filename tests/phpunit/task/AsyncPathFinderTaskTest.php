@@ -56,6 +56,7 @@ final class AsyncPathFinderTaskTest extends PathfindingTestCase{
 		}
 		return new AsyncPathFinderTask(
 			$serializedEvaluator,
+			igbinary_serialize(self::zombie()) ?? throw new \AssertionError(),
 			igbinary_serialize(new SearchRequest($start, $target, 2000, 64, 0)) ?? throw new \AssertionError(),
 			ThreadSafeArray::fromArray($sent),
 			new Terrain(new ArrayChunkSource($world->getChunks()), World::Y_MIN, World::Y_MAX),
@@ -76,7 +77,6 @@ final class AsyncPathFinderTaskTest extends PathfindingTestCase{
 
 	private function walkerTask(Vector3 $start, Vector3 $target) : AsyncPathFinderTask{
 		$evaluator = new WalkNodeEvaluator();
-		self::setUpMob($evaluator, $start);
 		return $this->task(igbinary_serialize($evaluator) ?? throw new \AssertionError(), $start, $target);
 	}
 

@@ -38,7 +38,6 @@ final class ChunkRequestPathfindingTest extends PathfindingTestCase{
 		$target = self::standingAt(30, 8);
 
 		$evaluator = new WalkNodeEvaluator();
-		self::setUpMob($evaluator, $start);
 		$allSent = self::search($evaluator, $world, $start, $target);
 		self::assertReached($allSent, $target);
 

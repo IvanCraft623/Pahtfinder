@@ -38,8 +38,8 @@ class PathFinder {
 	/**
 	 * @phpstan-param (Closure() : bool)|null $isCancelled checked between nodes
 	 */
-	public static function search(NodeEvaluator $evaluator, BlockGetter $blockGetter, SearchRequest $request, ?Closure $isCancelled = null) : Path{
-		$evaluator->prepare($blockGetter, $request->start);
+	public static function search(NodeEvaluator $evaluator, MovementProfile $profile, BlockGetter $blockGetter, SearchRequest $request, ?Closure $isCancelled = null) : Path{
+		$evaluator->prepare(new SearchContext($blockGetter, $profile, $request->start, $request->onGround));
 		try{
 			$target = $request->target;
 			return self::actuallyFindPath(
@@ -49,6 +49,7 @@ class PathFinder {
 				$request->maxVisitedNodes,
 				$request->maxDistanceFromStart,
 				$request->reachRange,
+				$profile,
 				$isCancelled
 			);
 		}finally{
@@ -66,6 +67,7 @@ class PathFinder {
 		int $maxVisitedNodes,
 		float $maxDistanceFromStart,
 		int $reachRange,
+		MovementProfile $profile,
 		?Closure $isCancelled = null
 	) : Path {
 		$openSet = new BinaryHeap();
@@ -125,7 +127,7 @@ class PathFinder {
 			}
 		}
 
-		return self::reconstructPath($target->getBestNode(), $target->asVector3(), $result, $evaluator);
+		return self::reconstructPath($target->getBestNode(), $target->asVector3(), $result, $profile);
 	}
 
 	/**
@@ -150,7 +152,7 @@ class PathFinder {
 		return $h;
 	}
 
-	private static function reconstructPath(Node $startNode, Vector3 $target, PathResult $result, NodeEvaluator $evaluator) : Path{
+	private static function reconstructPath(Node $startNode, Vector3 $target, PathResult $result, MovementProfile $profile) : Path{
 		/** @var Node[] $nodes */
 		$nodes = [];
 		$currentNode = $startNode;
@@ -162,6 +164,6 @@ class PathFinder {
 			$nodes[] = $from;
 		}
 
-		return new Path(array_reverse($nodes), $target, $result, $evaluator->getNodeWidth(), $evaluator->getNodeHeight());
+		return new Path(array_reverse($nodes), $target, $result, $profile->nodeWidth, $profile->nodeHeight);
 	}
 }

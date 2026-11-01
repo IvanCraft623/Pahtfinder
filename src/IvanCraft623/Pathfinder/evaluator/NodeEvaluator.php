@@ -23,8 +23,8 @@ declare(strict_types=1);
 namespace IvanCraft623\Pathfinder\evaluator;
 
 use IvanCraft623\Pathfinder\BlockPathType;
-use IvanCraft623\Pathfinder\BlockPathTypeCostMap;
 use IvanCraft623\Pathfinder\Node;
+use IvanCraft623\Pathfinder\SearchContext;
 use IvanCraft623\Pathfinder\Target;
 use IvanCraft623\Pathfinder\utils\EnumSet;
 use IvanCraft623\Pathfinder\world\BlockGetter;
@@ -38,11 +38,7 @@ use function floor;
  */
 abstract class NodeEvaluator {
 
-	protected BlockPathTypeCostMap $pathTypeCostMap;
-
-	protected BlockGetter $blockGetter;
-
-	protected Vector3 $startPosition;
+	protected SearchContext $context;
 
 	/** @var array<BlockPosHash, Node> */
 	protected array $nodes = [];
@@ -50,21 +46,18 @@ abstract class NodeEvaluator {
 	/** @var EnumSet<BlockPathType>|null */
 	protected ?EnumSet $pathTypes = null;
 
-	public function __construct(?BlockPathTypeCostMap $pathTypeCostMap = null) {
-		$this->pathTypeCostMap = $pathTypeCostMap ?? new BlockPathTypeCostMap(); //empty one
-	}
-
-	public function prepare(BlockGetter $blockGetter, Vector3 $startPosition) : void{
-		$this->blockGetter = $blockGetter;
-		$this->startPosition = $startPosition;
-
+	public function prepare(SearchContext $context) : void{
+		$this->context = $context;
 		$this->nodes = [];
 	}
 
 	public function done() : void{
-		unset($this->blockGetter);
-		unset($this->startPosition);
-		unset($this->nodes);
+		unset($this->context);
+		$this->nodes = [];
+	}
+
+	final protected function getPathfindingMalus(BlockPathType $pathType) : float{
+		return $this->context->profile->costMap->getPathfindingMalus($pathType);
 	}
 
 	public function getNode(Vector3 $pos) : Node{
@@ -72,7 +65,7 @@ abstract class NodeEvaluator {
 	}
 
 	public function getNodeAt(int $x, int $y, int $z) : Node{
-		if (!$this->blockGetter->isInWorld($x, $y, $z)) {
+		if (!$this->context->blockGetter->isInWorld($x, $y, $z)) {
 			throw new \InvalidArgumentException("Position ($x, $y, $z) is out of world bounds!");
 		}
 
@@ -81,20 +74,6 @@ abstract class NodeEvaluator {
 			$this->nodes[$hash] = new Node($x, $y, $z);
 		}
 		return $this->nodes[$hash];
-	}
-
-	/**
-	 * Blocks a node spans on the x and z axes.
-	 */
-	public function getNodeWidth() : int{
-		return 1;
-	}
-
-	/**
-	 * Blocks a node spans on the y axis.
-	 */
-	public function getNodeHeight() : int{
-		return 1;
 	}
 
 	public abstract function getStart() : Node;
@@ -112,5 +91,8 @@ abstract class NodeEvaluator {
 
 	public abstract function getCachedBlockPathType(BlockGetter $blockGetter, int $x, int $y, int $z) : BlockPathType;
 
-	public abstract function getBlockPathType(BlockGetter $blockGetter, int $x, int $y, int $z) : BlockPathType;
+	/**
+	 * @param Vector3 $mobPosition where the mob is, some types depend on it
+	 */
+	public abstract function getBlockPathType(BlockGetter $blockGetter, int $x, int $y, int $z, Vector3 $mobPosition) : BlockPathType;
 }
