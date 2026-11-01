@@ -94,6 +94,32 @@ the search ended:
 
 `Path::canReach()` is shorthand for `getPathResult() === PathResult::REACHED`.
 
+### Following a moving target
+
+When the target moved a little, search from the remaining node closest to the new
+target and splice the result on, keeping the walking progress. `startAtNode` starts
+the search at that node itself, not where a mob there would stand; a small node
+budget keeps a failed extension cheap.
+
+```php
+$index = $path->getClosestNodeIndex($newTarget);
+$executor->search($evaluator, $profile, $terrain, new SearchRequest(
+	$path->getNode($index),
+	$newTarget,
+	maxVisitedNodes: 500,
+	maxDistanceFromStart: 32,
+	startAtNode: true
+))->getPromise()->onCompletion(function(Path $continuation) use ($path, $index) : void{
+	if ($continuation->canReach()) {
+		$this->path = $path->splice($index, $continuation);
+	}
+}, static function() : void{});
+```
+
+A spliced path keeps the old route, so search from the mob again every few
+splices. `splice()` throws if the continuation does not start at that node or the
+node is behind the mob.
+
 ## 🎛️ Evaluators
 
 ### Using evaluators

@@ -128,6 +128,60 @@ final class PathTest extends TestCase{
 		self::assertTrue($wide->getNodeCenter(0)->equals(new Vector3(4, 64, -4)), "a 2x2 node's center is its corner block's far corner");
 	}
 
+	public function testClosestNodeIsAhead() : void{
+		$path = self::path([[0, 64, 0], [1, 64, 0], [2, 64, 0], [3, 64, 0]]);
+		self::assertSame(2, $path->getClosestNodeIndex(new Vector3(2, 64, 3)));
+
+		$path->advance();
+		$path->advance();
+		$path->advance();
+		self::assertSame(3, $path->getClosestNodeIndex(new Vector3(0, 64, 0)), "walked nodes don't count");
+
+		$path->advance();
+		$this->expectException(\LogicException::class);
+		$path->getClosestNodeIndex(new Vector3(0, 64, 0));
+	}
+
+	public function testSplice() : void{
+		$path = self::path([[0, 64, 0], [1, 64, 0], [2, 64, 0], [3, 64, 0]]);
+		$path->advance();
+		$continuation = new Path([new Node(2, 64, 0), new Node(2, 64, 1), new Node(2, 64, 2)], new Vector3(2, 64, 2), PathResult::REACHED);
+
+		$spliced = $path->splice(2, $continuation);
+		self::assertNotSame($path, $spliced);
+		self::assertTrue($spliced->equals(self::path([[0, 64, 0], [1, 64, 0], [2, 64, 0], [2, 64, 1], [2, 64, 2]])));
+		self::assertSame(1, $spliced->getNextNodeIndex(), "keeps the progress");
+		self::assertTrue($spliced->getTarget()->equals(new Vector3(2, 64, 2)));
+		self::assertSame(PathResult::REACHED, $spliced->getPathResult());
+		self::assertSame(4, $path->getNodeCount(), "leaves the spliced path alone");
+	}
+
+	public function testSpliceTakesTheContinuationResult() : void{
+		$path = self::path([[0, 64, 0], [1, 64, 0]]);
+		$continuation = new Path([new Node(1, 64, 0), new Node(2, 64, 0)], new Vector3(9, 64, 0), PathResult::BLOCKED);
+		$spliced = $path->splice(1, $continuation);
+
+		self::assertSame(PathResult::BLOCKED, $spliced->getPathResult());
+		self::assertSame(7.0, $spliced->getDistanceToTarget());
+	}
+
+	public function testSpliceNeedsTheContinuationToStartAtTheNode() : void{
+		$path = self::path([[0, 64, 0], [1, 64, 0]]);
+		$this->expectException(\InvalidArgumentException::class);
+		$path->splice(1, new Path([new Node(5, 64, 0)], new Vector3(5, 64, 0), PathResult::REACHED));
+	}
+
+	public function testSpliceCantDropWalkedNodes() : void{
+		$path = self::path([[0, 64, 0], [1, 64, 0], [2, 64, 0], [3, 64, 0]]);
+		$path->advance();
+		$path->advance();
+		$path->advance();
+		$path->splice(2, new Path([new Node(2, 64, 0)], new Vector3(2, 64, 0), PathResult::REACHED)); //the node being left is fine
+
+		$this->expectException(\InvalidArgumentException::class);
+		$path->splice(1, new Path([new Node(1, 64, 0)], new Vector3(1, 64, 0), PathResult::REACHED));
+	}
+
 	public function testEquals() : void{
 		$a = self::path([[0, 64, 0], [1, 64, 0]]);
 		self::assertTrue($a->equals(self::path([[0, 64, 0], [1, 64, 0]])));

@@ -25,6 +25,8 @@ namespace IvanCraft623\Pathfinder;
 use pocketmine\math\Vector3;
 use pocketmine\world\format\Chunk;
 use pocketmine\world\World;
+use function array_merge;
+use function array_slice;
 use function array_splice;
 use function count;
 use function max;
@@ -234,6 +236,49 @@ class Path{
 
 	public function getPreviousNode() : ?Node{
 		return $this->nodes[$this->nextNodeIndex - 1] ?? null;
+	}
+
+	/**
+	 * Index of the node still to walk closest to $position.
+	 *
+	 * @throws \LogicException if the path is done
+	 */
+	public function getClosestNodeIndex(Vector3 $position) : int{
+		if ($this->isDone()) {
+			throw new \LogicException("There is no node left to walk");
+		}
+
+		$closestIndex = $this->nextNodeIndex;
+		$closestDistance = INF;
+		for ($index = $this->nextNodeIndex; $index < $this->nodeCount; ++$index) {
+			$distance = $this->nodes[$index]->distanceSquared($position);
+			if ($distance < $closestDistance) {
+				$closestIndex = $index;
+				$closestDistance = $distance;
+			}
+		}
+		return $closestIndex;
+	}
+
+	/**
+	 * This path up to the node at $index, then $continuation, which starts at that node. The progress made along
+	 * this path is kept, so $index can't be behind the node last walked.
+	 *
+	 * @throws \InvalidArgumentException
+	 */
+	public function splice(int $index, Path $continuation) : Path{
+		if ($index < $this->nextNodeIndex - 1 || $index >= $this->nodeCount) {
+			throw new \InvalidArgumentException("Can't splice at node $index of $this->nodeCount, node $this->nextNodeIndex is next");
+		}
+		$continuationStart = $continuation->getNodeCount() === 0 ? null : $continuation->getNode(0);
+		if ($continuationStart === null || !$continuationStart->equals($this->nodes[$index])) {
+			throw new \InvalidArgumentException("The continuation does not start at node $index");
+		}
+
+		$nodes = array_merge(array_slice($this->nodes, 0, $index + 1), array_slice($continuation->nodes, 1));
+		$spliced = new Path($nodes, $continuation->target, $continuation->result, $this->nodeWidth, $this->nodeHeight);
+		$spliced->nextNodeIndex = $this->nextNodeIndex;
+		return $spliced;
 	}
 
 	public function equals(Path $other) : bool{

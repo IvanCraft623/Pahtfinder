@@ -117,9 +117,9 @@ abstract class NodeEvaluator {
 	}
 
 	/**
-	 * Start node at $position, clamped into the world.
+	 * Start node at the block of $position, clamped into the world.
 	 */
-	protected function getStartNode(Vector3 $position) : Node{
+	public function getStartNode(Vector3 $position) : Node{
 		$node = $this->getNodeAt(
 			(int) max(Limits::INT32_MIN, min(Limits::INT32_MAX, (int) floor($position->x))),
 			(int) max($this->context->blockGetter->minY, min($this->context->blockGetter->maxY - 1, (int) floor($position->y))),

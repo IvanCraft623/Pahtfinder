@@ -44,7 +44,7 @@ class PathFinder {
 			$target = $request->target;
 			return self::actuallyFindPath(
 				$evaluator,
-				$evaluator->getStart(),
+				$request->startAtNode ? $evaluator->getStartNode($request->start) : $evaluator->getStart(),
 				$evaluator->getGoal(floor($target->x), floor($target->y), floor($target->z)),
 				$request->maxVisitedNodes,
 				$request->maxDistanceFromStart,
