@@ -25,8 +25,9 @@ namespace IvanCraft623\Pathfinder\evaluator;
 use IvanCraft623\Pathfinder\BlockPathType;
 use IvanCraft623\Pathfinder\BlockPathTypeCostMap;
 use IvanCraft623\Pathfinder\Node;
+use IvanCraft623\Pathfinder\pathtype\AmphibiousPathTypeResolver;
+use IvanCraft623\Pathfinder\pathtype\PathTypeResolver;
 use IvanCraft623\Pathfinder\Target;
-use IvanCraft623\Pathfinder\world\BlockGetter;
 
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
@@ -38,6 +39,10 @@ use function min;
  * Swims in 3D through water and walks on land; use with {@link BlockPathTypeCostMap::amphibious()} costs.
  */
 class AmphibiousNodeEvaluator extends WalkNodeEvaluator {
+
+	public function __construct(PathTypeResolver $pathTypeResolver = new AmphibiousPathTypeResolver()){
+		parent::__construct($pathTypeResolver);
+	}
 
 	public function getStart() : Node{
 		$bb = $this->context->getStartBoundingBox();
@@ -58,9 +63,9 @@ class AmphibiousNodeEvaluator extends WalkNodeEvaluator {
 	public function getNeighbors(Node $node) : array{
 		$nodes = parent::getNeighbors($node);
 
-		$pathType = $this->getCachedBlockPathType($this->context->blockGetter, $node->x(), $node->y(), $node->z());
+		$pathType = $this->getCachedPathType($node->x(), $node->y(), $node->z());
 		$pathTypeAbove = $this->context->blockGetter->isInWorld($node->x(), $node->y() + 1, $node->z())
-			? $this->getCachedBlockPathType($this->context->blockGetter, $node->x(), $node->y() + 1, $node->z())
+			? $this->getCachedPathType($node->x(), $node->y() + 1, $node->z())
 			: BlockPathType::BLOCKED;
 
 		$maxUpStep = $this->getPathfindingMalus($pathTypeAbove) >= 0 && $pathType !== BlockPathType::STICKY_HONEY
@@ -87,19 +92,5 @@ class AmphibiousNodeEvaluator extends WalkNodeEvaluator {
 
 	protected function isAmphibious() : bool{
 		return true;
-	}
-
-	public function getBlockPathType(BlockGetter $blockGetter, int $x, int $y, int $z, Vector3 $mobPosition) : BlockPathType{
-		if (static::getBlockPathTypeRaw($blockGetter, $x, $y, $z) !== BlockPathType::WATER) {
-			return static::getBlockPathTypeStatic($blockGetter, $x, $y, $z);
-		}
-
-		foreach (Facing::OFFSET as [$dx, $dy, $dz]) {
-			if (static::getBlockPathTypeRaw($blockGetter, $x + $dx, $y + $dy, $z + $dz) === BlockPathType::BLOCKED) {
-				return BlockPathType::WATER_BORDER;
-			}
-		}
-
-		return BlockPathType::WATER;
 	}
 }

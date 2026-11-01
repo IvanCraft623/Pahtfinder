@@ -25,30 +25,16 @@ namespace IvanCraft623\Pathfinder\evaluator;
 use IvanCraft623\Pathfinder\BlockPathType;
 use IvanCraft623\Pathfinder\Node;
 use IvanCraft623\Pathfinder\PathComputationType;
-use IvanCraft623\Pathfinder\Target;
-use IvanCraft623\Pathfinder\utils\EnumSet;
-use IvanCraft623\Pathfinder\utils\Utils;
-use IvanCraft623\Pathfinder\world\BlockGetter;
+use IvanCraft623\Pathfinder\pathtype\BlockClassifier;
+use IvanCraft623\Pathfinder\pathtype\PathTypeResolver;
+use IvanCraft623\Pathfinder\pathtype\WalkPathTypeResolver;
 
-use pocketmine\block\BaseRail;
-use pocketmine\block\Block;
 use pocketmine\block\BlockTypeIds;
-use pocketmine\block\Campfire;
-use pocketmine\block\Door;
-use pocketmine\block\Fence;
-use pocketmine\block\FenceGate;
-use pocketmine\block\Lava;
-use pocketmine\block\Leaves;
 use pocketmine\block\Liquid;
-use pocketmine\block\Trapdoor;
-use pocketmine\block\Wall;
 use pocketmine\block\Water;
-use pocketmine\block\WoodenDoor;
 use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
-use pocketmine\utils\Limits;
-use pocketmine\world\World;
 use function ceil;
 use function floor;
 use function max;
@@ -58,13 +44,8 @@ class WalkNodeEvaluator extends NodeEvaluator {
 
 	public const DEFAULT_MOB_JUMP_HEIGHT = 1.125;
 
-	/** @var array<int, BlockPathType> World::blockHash() => BlockPathType */
-	protected array $pathTypesByPosCache = [];
-
-	public function done() : void{
-		$this->pathTypesByPosCache = [];
-
-		parent::done();
+	public function __construct(PathTypeResolver $pathTypeResolver = new WalkPathTypeResolver()){
+		parent::__construct($pathTypeResolver);
 	}
 
 	public function getStart() : Node{
@@ -87,7 +68,7 @@ class WalkNodeEvaluator extends NodeEvaluator {
 			} else {
 				$pos = new Vector3((int) floor($this->context->start->x), (int) floor($this->context->start->y) + 1, (int) floor($this->context->start->z));
 
-				while ((($b = $this->context->blockGetter->getBlock($pos))->getTypeId() === BlockTypeIds::AIR || Utils::isPathfindable($b, PathComputationType::LAND())) && $pos->y > World::Y_MIN) {
+				while ((($b = $this->context->blockGetter->getBlock($pos))->getTypeId() === BlockTypeIds::AIR || BlockClassifier::isPathfindable($b, PathComputationType::LAND())) && $pos->y > $this->context->blockGetter->minY) {
 					$pos = $pos->down();
 				}
 
@@ -106,27 +87,6 @@ class WalkNodeEvaluator extends NodeEvaluator {
 		return $this->getStartNode($position);
 	}
 
-	protected function getStartNode(Vector3 $position) : Node{
-		$node = $this->getNodeAt(
-			(int) max(Limits::INT32_MIN, min(Limits::INT32_MAX, (int) floor($position->x))),
-			(int) max($this->context->blockGetter->minY, min($this->context->blockGetter->maxY - 1, (int) floor($position->y))),
-			(int) max(Limits::INT32_MIN, min(Limits::INT32_MAX, (int) floor($position->z)))
-		);
-
-		$node->type = $this->getCachedBlockPathType($this->context->blockGetter, $node->x(), $node->y(), $node->z());
-		$node->costMalus = $this->getPathfindingMalus($node->type);
-
-		return $node;
-	}
-
-	public function getGoal(float $x, float $y, float $z) : Target{
-		return $this->getTargetFromNode($this->getNodeAt(
-			(int) max(Limits::INT32_MIN, min(Limits::INT32_MAX, (int) floor($x))),
-			(int) max($this->context->blockGetter->minY, min($this->context->blockGetter->maxY - 1, (int) floor($y))),
-			(int) max(Limits::INT32_MIN, min(Limits::INT32_MAX, (int) floor($z)))
-		));
-	}
-
 	/**
 	 * @return Node[]
 	 */
@@ -138,10 +98,10 @@ class WalkNodeEvaluator extends NodeEvaluator {
 		$nodeY = $node->y();
 		$nodeZ = $node->z();
 
-		$pathType = $this->getCachedBlockPathType($this->context->blockGetter, $nodeX, $nodeY, $nodeZ);
+		$pathType = $this->getCachedPathType($nodeX, $nodeY, $nodeZ);
 		$aboveY = $nodeY + 1;
 		$pathTypeAbove = $this->context->blockGetter->isInWorld($nodeX, $aboveY, $nodeZ)
-			? $this->getCachedBlockPathType($this->context->blockGetter, $nodeX, $aboveY, $nodeZ)
+			? $this->getCachedPathType($nodeX, $aboveY, $nodeZ)
 			: BlockPathType::BLOCKED;
 
 		if ($this->getPathfindingMalus($pathTypeAbove) >= 0 && !$pathType->equals(BlockPathType::STICKY_HONEY)) {
@@ -180,11 +140,11 @@ class WalkNodeEvaluator extends NodeEvaluator {
 		return $nodes;
 	}
 
-	public function isNeighborValid(Node $neighbor, Node $node) : bool{
+	protected function isNeighborValid(Node $neighbor, Node $node) : bool{
 		return !$neighbor->closed && ($neighbor->costMalus >= 0 || $node->costMalus < 0);
 	}
 
-	public function isDiagonalValid(Node $node, ?Node $neighbor1, ?Node $neighbor2, Node $diagonal) : bool{
+	protected function isDiagonalValid(Node $node, ?Node $neighbor1, ?Node $neighbor2, Node $diagonal) : bool{
 		if ($neighbor1 === null || $neighbor2 === null) {
 			return false;
 		}
@@ -209,7 +169,7 @@ class WalkNodeEvaluator extends NodeEvaluator {
 		return false;
 	}
 
-	public static function doesBlockHavePartialCollision(BlockPathType $pathType) : bool{
+	private static function doesBlockHavePartialCollision(BlockPathType $pathType) : bool{
 		return $pathType->equals(BlockPathType::FENCE) ||
 			$pathType->equals(BlockPathType::DOOR_WOOD_CLOSED) ||
 			$pathType->equals(BlockPathType::DOOR_IRON_CLOSED);
@@ -243,21 +203,14 @@ class WalkNodeEvaluator extends NodeEvaluator {
 		if (($this->context->profile->canFloat || $this->isAmphibious()) && $this->context->blockGetter->getBlock($pos) instanceof Water) {
 			return $pos->getY() + 0.5;
 		}
-		return static::getFloorLevelAt($this->context->blockGetter, $pos);
-	}
-
-	public static function getFloorLevelAt(BlockGetter $blockGetter, Vector3 $pos) : float{
-		$down = $pos->down();
-		$traceResult = $blockGetter->getBlock($down)->calculateIntercept($pos, $down);
-
-		return $traceResult === null ? $down->getY() : $traceResult->getHitVector()->getY();
+		return BlockClassifier::getFloorLevel($this->context->blockGetter, $pos);
 	}
 
 	protected function isAmphibious() : bool{
 		return false;
 	}
 
-	public function findAcceptedNode(int $x, int $y, int $z, int $remainingJumpHeight, float $floorLevel, int $facing, BlockPathType $originPathType) : ?Node{
+	protected function findAcceptedNode(int $x, int $y, int $z, int $remainingJumpHeight, float $floorLevel, int $facing, BlockPathType $originPathType) : ?Node{
 		if (!$this->context->blockGetter->isInWorld($x, $y, $z)) {
 			return null;
 		}
@@ -269,14 +222,14 @@ class WalkNodeEvaluator extends NodeEvaluator {
 			return null;
 		}
 
-		$currentPathType = $this->getCachedBlockPathType($this->context->blockGetter, $x, $y, $z);
+		$currentPathType = $this->getCachedPathType($x, $y, $z);
 		$malus = $this->getPathfindingMalus($currentPathType);
 
 		if ($malus >= 0) {
 			$resultNode = $this->getNodeAndUpdateCostToMax($x, $y, $z, $currentPathType, $malus);
 		}
 
-		if (static::doesBlockHavePartialCollision($originPathType) &&
+		if (self::doesBlockHavePartialCollision($originPathType) &&
 			$resultNode !== null && $resultNode->costMalus >= 0 &&
 			!$this->canReachWithoutCollision($resultNode)
 		) {
@@ -318,13 +271,13 @@ class WalkNodeEvaluator extends NodeEvaluator {
 
 			if (!$this->isAmphibious() && $currentPathType->equals(BlockPathType::WATER) && !$this->context->profile->canFloat) {
 				if ($y - 1 < $this->context->blockGetter->minY ||
-					!$this->getCachedBlockPathType($this->context->blockGetter, $x, $y - 1, $z)->equals(BlockPathType::WATER)
+					!$this->getCachedPathType($x, $y - 1, $z)->equals(BlockPathType::WATER)
 				) {
 					return $resultNode;
 				}
 
-				while ($y > World::Y_MIN) {
-					$currentPathType = $this->getCachedBlockPathType($this->context->blockGetter, $x, --$y, $z);
+				while ($y > $this->context->blockGetter->minY) {
+					$currentPathType = $this->getCachedPathType($x, --$y, $z);
 					if (!$currentPathType->equals(BlockPathType::WATER)) {
 						return $resultNode;
 					}
@@ -338,7 +291,7 @@ class WalkNodeEvaluator extends NodeEvaluator {
 				$startY = $y;
 
 				while ($currentPathType->equals(BlockPathType::OPEN)) {
-					if (--$y < World::Y_MIN) {
+					if (--$y < $this->context->blockGetter->minY) {
 						return $this->getBlockedNode($x, $startY, $z);
 					}
 
@@ -346,7 +299,7 @@ class WalkNodeEvaluator extends NodeEvaluator {
 						return $this->getBlockedNode($x, $y, $z);
 					}
 
-					$currentPathType = $this->getCachedBlockPathType($this->context->blockGetter, $x, $y, $z);
+					$currentPathType = $this->getCachedPathType($x, $y, $z);
 					$malus = $this->getPathfindingMalus($currentPathType);
 					if (!$currentPathType->equals(BlockPathType::OPEN) && $malus >= 0) {
 						$resultNode = $this->getNodeAndUpdateCostToMax($x, $y, $z, $currentPathType, $malus);
@@ -359,7 +312,7 @@ class WalkNodeEvaluator extends NodeEvaluator {
 				}
 			}
 
-			if (static::doesBlockHavePartialCollision($currentPathType) && $resultNode === null) {
+			if (self::doesBlockHavePartialCollision($currentPathType) && $resultNode === null) {
 				$resultNode = $this->getNodeAt($x, $y, $z);
 				$resultNode->closed = true;
 				$resultNode->type = $currentPathType;
@@ -404,222 +357,5 @@ class WalkNodeEvaluator extends NodeEvaluator {
 		}
 
 		return false;
-	}
-
-	/**
-	 * @param EnumSet<BlockPathType> $pathTypes
-	 */
-	public function getBlockPathTypes(BlockGetter $blockGetter, int $startX, int $startY, int $startZ, EnumSet $pathTypes, BlockPathType $pathType, Vector3 $mobPos) : BlockPathType{
-		for ($currentX = 0; $currentX < $this->context->profile->nodeWidth; ++$currentX) {
-			for ($currentY = 0; $currentY < $this->context->profile->nodeHeight; ++$currentY) {
-				for($currentZ = 0; $currentZ < $this->context->profile->nodeWidth; ++$currentZ) {
-					$currentPathType = $this->evaluateBlockPathType($blockGetter, $mobPos,
-						$this->getBlockPathType($blockGetter, $startX + $currentX, $startY + $currentY, $startZ + $currentZ, $mobPos)
-					);
-
-					if ($currentX === 0 && $currentY === 0 && $currentZ === 0) {
-						$pathType = $currentPathType;
-					}
-
-					$pathTypes->add($currentPathType);
-				}
-			}
-		}
-
-		return $pathType;
-	}
-
-	protected function evaluateBlockPathType(BlockGetter $blockGetter, Vector3 $mobPos, BlockPathType $pathType) : BlockPathType{
-		$canPassDoors = $this->context->profile->canPassDoors;
-		if ($pathType->equals(BlockPathType::DOOR_WOOD_CLOSED) && $this->context->profile->canOpenDoors && $canPassDoors) {
-			$pathType = BlockPathType::WALKABLE_DOOR;
-		} elseif ($pathType->equals(BlockPathType::DOOR_OPEN) && !$canPassDoors) {
-			$pathType = BlockPathType::BLOCKED;
-		} elseif ($pathType->equals(BlockPathType::RAIL) &&
-			!($blockGetter->getBlock($mobPos) instanceof BaseRail) &&
-			!($blockGetter->getBlock($mobPos->down()) instanceof BaseRail)
-		) {
-			$pathType = BlockPathType::UNPASSABLE_RAIL;
-		}
-
-		return $pathType;
-	}
-
-	public function getCachedBlockPathType(BlockGetter $blockGetter, int $x, int $y, int $z) : BlockPathType{
-		$blockHash = World::blockHash($x, $y, $z);
-		if (!isset($this->pathTypesByPosCache[$blockHash])) {
-			$this->pathTypesByPosCache[$blockHash] = $this->getBlockPathTypeAt($blockGetter, $x, $y, $z);
-		}
-
-		return $this->pathTypesByPosCache[$blockHash];
-	}
-
-	public function getBlockPathTypeAt(BlockGetter $blockGetter, int $x, int $y, int $z) : BlockPathType{
-		$this->pathTypes ??= new EnumSet(BlockPathType::class);
-		/** @var EnumSet<BlockPathType> $pathTypes */
-		$pathTypes = $this->pathTypes;
-		$pathTypes->clear();
-		$currentPathType = $this->getBlockPathTypes($blockGetter, $x, $y, $z, $pathTypes, BlockPathType::BLOCKED, $this->context->start->floor());
-
-		foreach ([BlockPathType::FENCE, BlockPathType::UNPASSABLE_RAIL] as $unpassableType) {
-			if ($pathTypes->contains($unpassableType)) {
-				return $unpassableType;
-			}
-		}
-
-		$bestPathType = BlockPathType::BLOCKED;
-		$bestMalus = $this->getPathfindingMalus($bestPathType);
-		foreach ($pathTypes as $pathType) {
-			$malus = $this->getPathfindingMalus($pathType);
-			if ($malus < 0) {
-				return $pathType;
-			}
-
-			if ($malus >= $bestMalus) {
-				$bestPathType = $pathType;
-				$bestMalus = $malus;
-			}
-		}
-
-		return ($currentPathType->equals(BlockPathType::OPEN) &&
-			$bestMalus === 0.0 &&
-			$this->context->profile->nodeWidth <= 1) ? BlockPathType::OPEN : $bestPathType;
-	}
-
-	public function getBlockPathType(BlockGetter $blockGetter, int $x, int $y, int $z, Vector3 $mobPosition) : BlockPathType{
-		return static::getBlockPathTypeStatic($blockGetter, $x, $y, $z);
-	}
-
-	public static function getBlockPathTypeStatic(BlockGetter $blockGetter, int $x, int $y, int $z) : BlockPathType{
-		$pathType = static::getBlockPathTypeRaw($blockGetter, $x, $y, $z);
-
-		if ($pathType->equals(BlockPathType::OPEN) && $y >= World::Y_MIN + 1) {
-			$pathTypeDown = static::getBlockPathTypeRaw($blockGetter, $x, $y - 1, $z);
-
-			if ($pathTypeDown->equals(BlockPathType::OPEN) ||
-				$pathTypeDown->equals(BlockPathType::WATER) ||
-				$pathTypeDown->equals(BlockPathType::LAVA) ||
-				$pathTypeDown->equals(BlockPathType::WALKABLE)
-			) {
-				// Block below is passable/fluid — we are floating above it
-				$pathType = BlockPathType::OPEN;
-			} else {
-				// Block below is solid-ish — check for hazard overrides first, then fall back to WALKABLE
-				if ($pathTypeDown->equals(BlockPathType::DAMAGE_FIRE)) {
-					$pathType = BlockPathType::DAMAGE_FIRE;
-				} elseif ($pathTypeDown->equals(BlockPathType::DAMAGE_OTHER)) {
-					$pathType = BlockPathType::DAMAGE_OTHER;
-				} elseif ($pathTypeDown->equals(BlockPathType::STICKY_HONEY)) {
-					$pathType = BlockPathType::STICKY_HONEY;
-				} elseif ($pathTypeDown->equals(BlockPathType::POWDER_SNOW)) {
-					$pathType = BlockPathType::DANGER_POWDER_SNOW;
-				} else {
-					$pathType = BlockPathType::WALKABLE;
-				}
-			}
-		}
-
-		if ($pathType->equals(BlockPathType::WALKABLE)) {
-			$pathType = static::checkNeighbourBlocks($blockGetter, $x, $y, $z, $pathType);
-		}
-
-		return $pathType;
-	}
-
-	public static function checkNeighbourBlocks(BlockGetter $blockGetter, int $x, int $y, int $z, BlockPathType $pathType) : BlockPathType{
-		for ($currentX = -1; $currentX <= 1; $currentX++) {
-			for ($currentY = -1; $currentY <= 1; $currentY++) {
-				for ($currentZ = -1; $currentZ <= 1; $currentZ++) {
-					if ($currentX === 0 && $currentY === 0 && $currentZ === 0) {
-						continue;
-					}
-
-					$block = $blockGetter->getBlockAt($x + $currentX, $y + $currentY, $z + $currentZ);
-					$id = $block->getTypeId();
-
-					if ($id === BlockTypeIds::CACTUS || $id === BlockTypeIds::SWEET_BERRY_BUSH) {
-						return BlockPathType::DANGER_OTHER;
-					}
-
-					if (static::isBurningBlock($block)) {
-						return BlockPathType::DANGER_FIRE;
-					}
-
-					if ($block instanceof Water) {
-						return BlockPathType::WATER_BORDER;
-					}
-				}
-			}
-		}
-		return $pathType;
-	}
-
-	public static function getBlockPathTypeRaw(BlockGetter $blockGetter, int $x, int $y, int $z) : BlockPathType{
-		$block = $blockGetter->getBlockAt($x, $y, $z);
-		$blockId = $block->getTypeId();
-
-		switch (true) {
-			case ($blockId === BlockTypeIds::AIR):
-				return BlockPathType::OPEN;
-
-			case ($block instanceof Trapdoor):
-			case ($blockId === BlockTypeIds::LILY_PAD):
-			case ($blockId === BlockTypeIds::BIG_DRIPLEAF_HEAD):
-				return BlockPathType::TRAPDOOR;
-
-			//TODO: powder snow
-
-			case ($blockId === BlockTypeIds::CACTUS):
-			case ($blockId === BlockTypeIds::SWEET_BERRY_BUSH):
-				return BlockPathType::DAMAGE_OTHER;
-
-			//TODO: honey
-
-			case ($blockId === BlockTypeIds::COCOA_POD):
-				return BlockPathType::COCOA;
-
-			case ($block instanceof Water):
-				return BlockPathType::WATER;
-
-			case ($block instanceof Lava):
-				return BlockPathType::LAVA;
-
-			case (static::isBurningBlock($block)):
-				return BlockPathType::DAMAGE_FIRE;
-
-			case ($block instanceof Door):
-				if (!$block->isOpen()) {
-					return $block instanceof WoodenDoor ? BlockPathType::DOOR_WOOD_CLOSED : BlockPathType::DOOR_IRON_CLOSED;
-				}
-				return BlockPathType::DOOR_OPEN;
-
-			case ($block instanceof BaseRail):
-				return BlockPathType::RAIL;
-
-			case ($block instanceof Leaves):
-				return BlockPathType::LEAVES;
-
-			case ($block instanceof Fence):
-			case ($block instanceof Wall):
-				return BlockPathType::FENCE;
-
-			case ($block instanceof FenceGate):
-				return $block->isOpen() ? BlockPathType::OPEN : BlockPathType::FENCE;
-
-			default:
-				break;
-
-		}
-		return Utils::isPathfindable($block, PathComputationType::LAND()) ? BlockPathType::OPEN : BlockPathType::BLOCKED;
-	}
-
-	public static function isBurningBlock(Block $block) : bool{
-		$blockId = $block->getTypeId();
-
-		return $blockId === BlockTypeIds::FIRE ||
-			($block instanceof Campfire && $block->isLit()) ||
-			$block instanceof Lava ||
-			$blockId === BlockTypeIds::MAGMA ||
-			$blockId === BlockTypeIds::LAVA_CAULDRON;
 	}
 }

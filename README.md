@@ -155,47 +155,60 @@ $profile = new MovementProfile(
 );
 ```
 
+### Path types
+
+An evaluator asks a `PathTypeResolver` what the blocks around it are: open,
+walkable, a fence, a closed door, water and so on (`BlockPathType`). Each
+evaluator comes with the resolver of its way of moving (`WalkPathTypeResolver`,
+`FlightPathTypeResolver`, `AmphibiousPathTypeResolver`) and takes another one in
+its constructor.
+
+- `getBlockPathType(BlockGetter, x, y, z, Vector3 $mobPosition)` — the type of one block.
+- `getPathType(BlockGetter, MovementProfile, x, y, z, Vector3 $mobPosition)` — the type of
+  all the blocks a mob of that profile takes, applying its door flags and costs.
+
+`BlockClassifier` holds what does not depend on the way of moving: a block's own
+type, its type for a mob on land (`getType()`), dangers around it and floor levels.
+None of these need a search, so they work on the main thread with a
+`WorldBlockGetter`:
+
+```php
+use IvanCraft623\Pathfinder\pathtype\BlockClassifier;
+use IvanCraft623\Pathfinder\world\WorldBlockGetter;
+
+$blockGetter = new WorldBlockGetter($world); // keep it, it is reusable
+$type = BlockClassifier::getType($blockGetter, $x, $y, $z);
+$floorY = BlockClassifier::getFloorLevel($blockGetter, $position);
+```
+
 ### Building your own evaluator
 
-Extend `NodeEvaluator` and implement the five abstract methods:
+Extend `NodeEvaluator`, pass its resolver to the parent constructor and implement:
 
 - `getStart() : Node` — the start node, usually derived from `$this->context->start`.
-- `getGoal(float $x, float $y, float $z) : Target` — the target node; typically
-  `$this->getTargetFromNode($this->getNodeAt(...))`.
 - `getNeighbors(Node $node) : array` — which nodes are reachable from `$node`.
-- `getBlockPathType(BlockGetter $blockGetter, int $x, int $y, int $z, Vector3 $mobPosition) : BlockPathType`
-  — classify a block for a mob at `$mobPosition`. It is also called outside a
-  search (e.g. to check a strafe target), so it must not rely on `$this->context`.
-- `getCachedBlockPathType(...) : BlockPathType` — cached variant used during the
-  search.
 
-You have access to `$this->context` (the block getter, the profile, the start and
-whether it is on the ground) and `$this->nodes` (the node cache), plus the
-`getNodeAt()` and `getPathfindingMalus()` helpers. Costs always come from the
-profile's cost map.
+`getGoal()` defaults to the block of the target, override it if needed. You have
+access to `$this->context` (the block getter, the profile, the start and whether
+it is on the ground) and `$this->nodes` (the node cache), plus the `getNodeAt()`,
+`getStartNode()`, `getCachedPathType()` and `getPathfindingMalus()` helpers. Costs
+always come from the profile's cost map.
 
 ```php
 use IvanCraft623\Pathfinder\BlockPathType;
 use IvanCraft623\Pathfinder\Node;
-use IvanCraft623\Pathfinder\Target;
 use IvanCraft623\Pathfinder\evaluator\NodeEvaluator;
-use IvanCraft623\Pathfinder\world\BlockGetter;
+use IvanCraft623\Pathfinder\pathtype\FlightPathTypeResolver;
 use pocketmine\math\Facing;
-use pocketmine\math\Vector3;
-use function floor;
 
-final class SimpleWalkEvaluator extends NodeEvaluator {
+final class SimpleFlyingEvaluator extends NodeEvaluator {
 
-	public function getStart() : Node{
-		return $this->getNodeAt(
-			(int) floor($this->context->start->x),
-			(int) floor($this->context->start->y),
-			(int) floor($this->context->start->z)
-		);
+	public function __construct(){
+		parent::__construct(new FlightPathTypeResolver());
 	}
 
-	public function getGoal(float $x, float $y, float $z) : Target{
-		return $this->getTargetFromNode($this->getNodeAt((int) floor($x), (int) floor($y), (int) floor($z)));
+	public function getStart() : Node{
+		return $this->getStartNode($this->context->start);
 	}
 
 	/**
@@ -210,25 +223,23 @@ final class SimpleWalkEvaluator extends NodeEvaluator {
 			$y = $node->y() + $dy;
 			$z = $node->z() + $dz;
 
-			$blockGetter = $this->context->blockGetter;
-			if (!$blockGetter->isInWorld($x, $y, $z)) {
+			if (!$this->context->blockGetter->isInWorld($x, $y, $z)) {
 				continue;
 			}
 
-			if ($this->getCachedBlockPathType($blockGetter, $x, $y, $z) !== BlockPathType::BLOCKED) {
-				$neighbors[] = $this->getNodeAt($x, $y, $z);
+			$type = $this->getCachedPathType($x, $y, $z);
+			$malus = $this->getPathfindingMalus($type);
+			if ($malus >= 0) {
+				$neighbor = $this->getNodeAt($x, $y, $z);
+				$neighbor->type = $type;
+				$neighbor->costMalus = $malus;
+				if (!$neighbor->closed) {
+					$neighbors[] = $neighbor;
+				}
 			}
 		}
 
 		return $neighbors;
-	}
-
-	public function getBlockPathType(BlockGetter $blockGetter, int $x, int $y, int $z, Vector3 $mobPosition) : BlockPathType{
-		return $blockGetter->getBlockAt($x, $y, $z)->isSolid() ? BlockPathType::BLOCKED : BlockPathType::OPEN;
-	}
-
-	public function getCachedBlockPathType(BlockGetter $blockGetter, int $x, int $y, int $z) : BlockPathType{
-		return $this->getBlockPathType($blockGetter, $x, $y, $z, $this->context->start);
 	}
 }
 ```

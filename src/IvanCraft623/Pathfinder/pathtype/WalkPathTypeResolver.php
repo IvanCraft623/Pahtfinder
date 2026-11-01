@@ -20,18 +20,14 @@
 
 declare(strict_types=1);
 
-namespace IvanCraft623\Pathfinder\world;
+namespace IvanCraft623\Pathfinder\pathtype;
 
-use pocketmine\block\Block;
-use pocketmine\world\World;
+use IvanCraft623\Pathfinder\BlockPathType;
+use IvanCraft623\Pathfinder\world\BlockGetter;
+use pocketmine\math\Vector3;
 
-class SyncBlockGetter extends BlockGetter{
-
-	public function __construct(protected World $world){
-		parent::__construct($world->getMinY(), $world->getMaxY());
-	}
-
-	public function getBlockAt(int $x, int $y, int $z, bool $cached = true, bool $addToCache = true) : Block{
-		return $this->world->getBlockAt($x, $y, $z, $cached, $addToCache);
+class WalkPathTypeResolver extends PathTypeResolver{
+	public function getBlockPathType(BlockGetter $blockGetter, int $x, int $y, int $z, Vector3 $mobPosition) : BlockPathType{
+		return BlockClassifier::getType($blockGetter, $x, $y, $z);
 	}
 }

@@ -24,25 +24,19 @@ namespace IvanCraft623\Pathfinder\evaluator;
 
 use IvanCraft623\Pathfinder\BlockPathType;
 use IvanCraft623\Pathfinder\Node;
-use IvanCraft623\Pathfinder\utils\EnumSet;
-use IvanCraft623\Pathfinder\world\BlockGetter;
+use IvanCraft623\Pathfinder\pathtype\FlightPathTypeResolver;
+use IvanCraft623\Pathfinder\pathtype\PathTypeResolver;
 
 use pocketmine\block\Water;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
-use pocketmine\world\World;
 use function floor;
 use function max;
 
-class FlightNodeEvaluator extends WalkNodeEvaluator {
+class FlightNodeEvaluator extends NodeEvaluator {
 
-	/** @var array<int, BlockPathType> World::blockHash() => BlockPathType */
-	private array $pathTypeByPosCache = [];
-
-	public function done() : void{
-		$this->pathTypeByPosCache = [];
-
-		parent::done();
+	public function __construct(PathTypeResolver $pathTypeResolver = new FlightPathTypeResolver()){
+		parent::__construct($pathTypeResolver);
 	}
 
 	public function getStart() : Node{
@@ -62,12 +56,12 @@ class FlightNodeEvaluator extends WalkNodeEvaluator {
 		if (!$this->canStartAt($pos)) {
 			foreach ($this->getStartNodeCandidates() as $candidate) {
 				if ($this->canStartAt($candidate)) {
-					return parent::getStartNode($candidate);
+					return $this->getStartNode($candidate);
 				}
 			}
 		}
 
-		return parent::getStartNode($pos);
+		return $this->getStartNode($pos);
 	}
 
 	private function isStartUnderwater() : bool{
@@ -79,7 +73,7 @@ class FlightNodeEvaluator extends WalkNodeEvaluator {
 	}
 
 	protected function canStartAt(Vector3 $pos) : bool{
-		$pathType = $this->getBlockPathType($this->context->blockGetter, (int) $pos->x, (int) $pos->y, (int) $pos->z, $this->context->start);
+		$pathType = $this->pathTypeResolver->getBlockPathType($this->context->blockGetter, (int) $pos->x, (int) $pos->y, (int) $pos->z, $this->context->start);
 		return $this->getPathfindingMalus($pathType) >= 0;
 	}
 
@@ -199,13 +193,13 @@ class FlightNodeEvaluator extends WalkNodeEvaluator {
 		return $nodes;
 	}
 
-	public function findAcceptedNode(int $x, int $y, int $z, int $remainingJumpHeight = 0, float $floorLevel = 0.0, int $facing = 0, ?BlockPathType $originPathType = null) : ?Node{
+	private function findAcceptedNode(int $x, int $y, int $z) : ?Node{
 		if (!$this->context->blockGetter->isInWorld($x, $y, $z)) {
 			return null;
 		}
 
 		$node = null;
-		$pathType = $this->getCachedBlockPathType($this->context->blockGetter, $x, $y, $z);
+		$pathType = $this->getCachedPathType($x, $y, $z);
 		$malus = $this->getPathfindingMalus($pathType);
 
 		if ($malus >= 0) {
@@ -219,77 +213,5 @@ class FlightNodeEvaluator extends WalkNodeEvaluator {
 		}
 
 		return $node;
-	}
-
-	public function getCachedBlockPathType(BlockGetter $blockGetter, int $x, int $y, int $z) : BlockPathType{
-		$blockHash = World::blockHash($x, $y, $z);
-		if (!isset($this->pathTypeByPosCache[$blockHash])) {
-			$this->pathTypeByPosCache[$blockHash] = $this->getBlockPathTypeAt($blockGetter, $x, $y, $z);
-		}
-
-		return $this->pathTypeByPosCache[$blockHash];
-	}
-
-	public function getBlockPathTypeAt(BlockGetter $blockGetter, int $x, int $y, int $z) : BlockPathType{
-		$this->pathTypes ??= new EnumSet(BlockPathType::class);
-		/** @var EnumSet<BlockPathType> $pathTypes */
-		$pathTypes = $this->pathTypes;
-		$pathTypes->clear();
-		$currentPathType = $this->getBlockPathTypes($blockGetter, $x, $y, $z, $pathTypes, BlockPathType::BLOCKED, $this->context->start->floor());
-
-		if ($pathTypes->contains(BlockPathType::FENCE)) {
-			return BlockPathType::FENCE;
-		}
-
-		$bestPathType = BlockPathType::BLOCKED;
-		$bestMalus = $this->getPathfindingMalus($bestPathType);
-		foreach ($pathTypes as $pathType) {
-			$malus = $this->getPathfindingMalus($pathType);
-			if ($malus < 0) {
-				return $pathType;
-			}
-
-			if ($malus >= $bestMalus) {
-				$bestPathType = $pathType;
-				$bestMalus = $malus;
-			}
-		}
-
-		return ($currentPathType->equals(BlockPathType::OPEN) &&
-			$bestMalus === 0.0) ? BlockPathType::OPEN : $bestPathType;
-	}
-
-	public function getBlockPathType(BlockGetter $blockGetter, int $x, int $y, int $z, Vector3 $mobPosition) : BlockPathType{
-		$pathType = static::getBlockPathTypeRaw($blockGetter, $x, $y, $z);
-
-		if ($pathType->equals(BlockPathType::OPEN) && $y >= World::Y_MIN + 1) {
-			$pathTypeDown = static::getBlockPathTypeRaw($blockGetter, $x, $y - 1, $z);
-
-			if ($pathTypeDown->equals(BlockPathType::DAMAGE_FIRE) || $pathTypeDown->equals(BlockPathType::LAVA)) {
-				$pathType = BlockPathType::DAMAGE_FIRE;
-			} elseif ($pathTypeDown->equals(BlockPathType::DAMAGE_OTHER)) {
-				$pathType = BlockPathType::DAMAGE_OTHER;
-			} elseif ($pathTypeDown->equals(BlockPathType::COCOA)) {
-				$pathType = BlockPathType::COCOA;
-			} elseif ($pathTypeDown->equals(BlockPathType::FENCE)) {
-				// Only treat as FENCE if we are not standing at the mob's own position
-				$mobPos = $mobPosition->floor();
-				if ($x !== (int) $mobPos->x || $y !== (int) $mobPos->y || $z !== (int) $mobPos->z) {
-					$pathType = BlockPathType::FENCE;
-				}
-			} else {
-				$pathType = (
-					!$pathTypeDown->equals(BlockPathType::WALKABLE) &&
-					!$pathTypeDown->equals(BlockPathType::OPEN) &&
-					!$pathTypeDown->equals(BlockPathType::WATER)
-				) ? BlockPathType::WALKABLE : BlockPathType::OPEN;
-			}
-		}
-
-		if ($pathType->equals(BlockPathType::WALKABLE) || $pathType->equals(BlockPathType::OPEN)) {
-			$pathType = static::checkNeighbourBlocks($blockGetter, $x, $y, $z, $pathType);
-		}
-
-		return $pathType;
 	}
 }

@@ -22,7 +22,7 @@ declare(strict_types=1);
 
 namespace IvanCraft623\Pathfinder;
 
-use IvanCraft623\Pathfinder\evaluator\WalkNodeEvaluator;
+use IvanCraft623\Pathfinder\pathtype\BlockClassifier;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use pocketmine\block\Block;
@@ -62,14 +62,14 @@ final class BlockPathTypeTest extends TestCase{
 	#[DataProvider("rawTypes")]
 	public function testRawType(Block $block, BlockPathType $expected) : void{
 		$world = (new TestWorld())->set(0, 64, 0, $block);
-		self::assertSame($expected, WalkNodeEvaluator::getBlockPathTypeRaw($world->getBlockGetter(), 0, 64, 0));
+		self::assertSame($expected, BlockClassifier::getRawType($world->getBlockGetter(), 0, 64, 0));
 	}
 
 	public function testTopDoorHalfTakesTheOpenStateOfTheBottomHalf() : void{
 		$world = (new TestWorld())
 			->set(0, 64, 0, VanillaBlocks::OAK_DOOR()->setOpen(true))
 			->set(0, 65, 0, VanillaBlocks::OAK_DOOR()->setTop(true));
-		self::assertSame(BlockPathType::DOOR_OPEN, WalkNodeEvaluator::getBlockPathTypeRaw($world->getBlockGetter(), 0, 65, 0));
+		self::assertSame(BlockPathType::DOOR_OPEN, BlockClassifier::getRawType($world->getBlockGetter(), 0, 65, 0));
 	}
 
 	/**
@@ -90,7 +90,7 @@ final class BlockPathTypeTest extends TestCase{
 	#[DataProvider("typesAbove")]
 	public function testTypeAbove(Block $below, BlockPathType $expected) : void{
 		$world = (new TestWorld())->set(0, 63, 0, $below);
-		self::assertSame($expected, WalkNodeEvaluator::getBlockPathTypeStatic($world->getBlockGetter(), 0, 64, 0));
+		self::assertSame($expected, BlockClassifier::getType($world->getBlockGetter(), 0, 64, 0));
 	}
 
 	/**
@@ -112,10 +112,10 @@ final class BlockPathTypeTest extends TestCase{
 		$world = (new TestWorld())
 			->fill(-1, 63, -1, 1, 63, 1, VanillaBlocks::STONE())
 			->set(1, 64, 1, $neighbour);
-		self::assertSame($expected, WalkNodeEvaluator::getBlockPathTypeStatic($world->getBlockGetter(), 0, 64, 0));
+		self::assertSame($expected, BlockClassifier::getType($world->getBlockGetter(), 0, 64, 0));
 	}
 
 	public function testUnsentChunksReadAsAir() : void{
-		self::assertSame(BlockPathType::OPEN, WalkNodeEvaluator::getBlockPathTypeRaw((new TestWorld())->getBlockGetter(), 1000, 64, 1000));
+		self::assertSame(BlockPathType::OPEN, BlockClassifier::getRawType((new TestWorld())->getBlockGetter(), 1000, 64, 1000));
 	}
 }

@@ -55,6 +55,22 @@ final class WalkPathfindingTest extends PathfindingTestCase{
 		self::assertSame(self::FLOOR_Y + 1, $path->getNode(0)->y());
 	}
 
+	/**
+	 * Falling past the bottom of a world that starts at y=0, like the nether, used to ask for nodes below it.
+	 */
+	public function testFallingOffAtTheBottomOfTheWorld() : void{
+		$world = (new TestWorld())->fill(0, 0, 0, 4, 0, 4, VanillaBlocks::STONE());
+		$path = PathFinder::search(
+			self::walker(),
+			self::zombie(),
+			$world->getBlockGetter(0, 128),
+			new SearchRequest(new Vector3(2.5, 1, 2.5), new Vector3(10.5, 1, 2.5), 200, 32, 0)
+		);
+
+		self::assertSame(PathResult::BLOCKED, $path->getPathResult());
+		self::assertSame(4, $path->getEndNode()?->x(), "stops at the edge");
+	}
+
 	public function testReachRangeStopsShort() : void{
 		$start = self::standingAt(2, 2);
 		$target = self::standingAt(20, 2);

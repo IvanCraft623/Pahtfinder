@@ -24,14 +24,16 @@ namespace IvanCraft623\Pathfinder\evaluator;
 
 use IvanCraft623\Pathfinder\BlockPathType;
 use IvanCraft623\Pathfinder\Node;
+use IvanCraft623\Pathfinder\pathtype\PathTypeResolver;
 use IvanCraft623\Pathfinder\SearchContext;
 use IvanCraft623\Pathfinder\Target;
-use IvanCraft623\Pathfinder\utils\EnumSet;
-use IvanCraft623\Pathfinder\world\BlockGetter;
 
 use pocketmine\math\Vector3;
+use pocketmine\utils\Limits;
 use pocketmine\world\World;
 use function floor;
+use function max;
+use function min;
 
 /**
  * @phpstan-import-type BlockPosHash from World
@@ -43,21 +45,45 @@ abstract class NodeEvaluator {
 	/** @var array<BlockPosHash, Node> */
 	protected array $nodes = [];
 
-	/** @var EnumSet<BlockPathType>|null */
-	protected ?EnumSet $pathTypes = null;
+	/** @var array<BlockPosHash, BlockPathType> */
+	private array $pathTypes = [];
+
+	public function __construct(
+		protected readonly PathTypeResolver $pathTypeResolver
+	){
+	}
+
+	public function getPathTypeResolver() : PathTypeResolver{
+		return $this->pathTypeResolver;
+	}
 
 	public function prepare(SearchContext $context) : void{
 		$this->context = $context;
 		$this->nodes = [];
+		$this->pathTypes = [];
 	}
 
 	public function done() : void{
 		unset($this->context);
 		$this->nodes = [];
+		$this->pathTypes = [];
 	}
 
 	final protected function getPathfindingMalus(BlockPathType $pathType) : float{
 		return $this->context->profile->costMap->getPathfindingMalus($pathType);
+	}
+
+	/**
+	 * Type of the blocks the mob takes with its lowest corner at x, y, z.
+	 */
+	final protected function getCachedPathType(int $x, int $y, int $z) : BlockPathType{
+		$hash = World::blockHash($x, $y, $z);
+		return $this->pathTypes[$hash] ??= $this->pathTypeResolver->getPathType(
+			$this->context->blockGetter,
+			$this->context->profile,
+			$x, $y, $z,
+			$this->context->start
+		);
 	}
 
 	public function getNode(Vector3 $pos) : Node{
@@ -78,21 +104,36 @@ abstract class NodeEvaluator {
 
 	public abstract function getStart() : Node;
 
-	public abstract function getGoal(float $x, float $y, float $z) : Target;
+	public function getGoal(float $x, float $y, float $z) : Target{
+		return $this->getTargetFromNode($this->getNodeAt(
+			(int) max(Limits::INT32_MIN, min(Limits::INT32_MAX, (int) floor($x))),
+			(int) max($this->context->blockGetter->minY, min($this->context->blockGetter->maxY - 1, (int) floor($y))),
+			(int) max(Limits::INT32_MIN, min(Limits::INT32_MAX, (int) floor($z)))
+		));
+	}
 
 	protected function getTargetFromNode(Node $node) : Target {
 		return Target::fromObject($node);
 	}
 
 	/**
+	 * Start node at $position, clamped into the world.
+	 */
+	protected function getStartNode(Vector3 $position) : Node{
+		$node = $this->getNodeAt(
+			(int) max(Limits::INT32_MIN, min(Limits::INT32_MAX, (int) floor($position->x))),
+			(int) max($this->context->blockGetter->minY, min($this->context->blockGetter->maxY - 1, (int) floor($position->y))),
+			(int) max(Limits::INT32_MIN, min(Limits::INT32_MAX, (int) floor($position->z)))
+		);
+
+		$node->type = $this->getCachedPathType($node->x(), $node->y(), $node->z());
+		$node->costMalus = $this->getPathfindingMalus($node->type);
+
+		return $node;
+	}
+
+	/**
 	 * @return Node[]
 	 */
 	public abstract function getNeighbors(Node $node) : array;
-
-	public abstract function getCachedBlockPathType(BlockGetter $blockGetter, int $x, int $y, int $z) : BlockPathType;
-
-	/**
-	 * @param Vector3 $mobPosition where the mob is, some types depend on it
-	 */
-	public abstract function getBlockPathType(BlockGetter $blockGetter, int $x, int $y, int $z, Vector3 $mobPosition) : BlockPathType;
 }

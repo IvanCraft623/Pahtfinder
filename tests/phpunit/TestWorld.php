@@ -73,7 +73,7 @@ final class TestWorld{
 	/**
 	 * A getter reading this world the way the worker does, with every chunk already sent.
 	 */
-	public function getBlockGetter() : BlockGetter{
-		return new ChunkBlockGetter(new ArrayChunkSource($this->chunks), World::Y_MIN, World::Y_MAX);
+	public function getBlockGetter(int $minY = World::Y_MIN, int $maxY = World::Y_MAX) : BlockGetter{
+		return new ChunkBlockGetter(new ArrayChunkSource($this->chunks), $minY, $maxY);
 	}
 }

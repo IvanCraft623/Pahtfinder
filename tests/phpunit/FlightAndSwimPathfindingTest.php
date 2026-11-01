@@ -24,6 +24,7 @@ namespace IvanCraft623\Pathfinder;
 
 use IvanCraft623\Pathfinder\evaluator\AmphibiousNodeEvaluator;
 use IvanCraft623\Pathfinder\evaluator\FlightNodeEvaluator;
+use IvanCraft623\Pathfinder\pathtype\FlightPathTypeResolver;
 use pocketmine\block\VanillaBlocks;
 use pocketmine\math\Vector3;
 
@@ -46,15 +47,15 @@ final class FlightAndSwimPathfindingTest extends PathfindingTestCase{
 	}
 
 	/**
-	 * Main thread callers classify blocks with an evaluator that never ran a search.
+	 * Classifying needs no search, as on the main thread.
 	 */
-	public function testFlightClassifiesOutsideASearch() : void{
+	public function testFlightClassifiesWithoutASearch() : void{
 		$world = (new TestWorld())->fill(0, 63, 0, 1, 63, 0, VanillaBlocks::OAK_FENCE());
-		$evaluator = new FlightNodeEvaluator();
+		$resolver = new FlightPathTypeResolver();
 		$mobPosition = new Vector3(0.5, 64, 0.5);
 
-		self::assertSame(BlockPathType::FENCE, $evaluator->getBlockPathType($world->getBlockGetter(), 1, 64, 0, $mobPosition));
-		self::assertSame(BlockPathType::OPEN, $evaluator->getBlockPathType($world->getBlockGetter(), 0, 64, 0, $mobPosition), "the mob's own block");
+		self::assertSame(BlockPathType::FENCE, $resolver->getBlockPathType($world->getBlockGetter(), 1, 64, 0, $mobPosition));
+		self::assertSame(BlockPathType::OPEN, $resolver->getBlockPathType($world->getBlockGetter(), 0, 64, 0, $mobPosition), "the mob's own block");
 	}
 
 	/**
