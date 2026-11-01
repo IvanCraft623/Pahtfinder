@@ -103,13 +103,13 @@ abstract class PathTypeResolver{
 	}
 
 	private function applyProfile(BlockGetter $blockGetter, MovementProfile $profile, Vector3 $mobBlock, BlockPathType $pathType) : BlockPathType{
-		if ($pathType->equals(BlockPathType::DOOR_WOOD_CLOSED) && $profile->canOpenDoors && $profile->canPassDoors) {
+		if ($pathType === BlockPathType::DOOR_WOOD_CLOSED && $profile->canOpenDoors && $profile->canPassDoors) {
 			return BlockPathType::WALKABLE_DOOR;
 		}
-		if ($pathType->equals(BlockPathType::DOOR_OPEN) && !$profile->canPassDoors) {
+		if ($pathType === BlockPathType::DOOR_OPEN && !$profile->canPassDoors) {
 			return BlockPathType::BLOCKED;
 		}
-		if ($pathType->equals(BlockPathType::RAIL) &&
+		if ($pathType === BlockPathType::RAIL &&
 			!($blockGetter->getBlock($mobBlock) instanceof BaseRail) &&
 			!($blockGetter->getBlock($mobBlock->down()) instanceof BaseRail)
 		) {

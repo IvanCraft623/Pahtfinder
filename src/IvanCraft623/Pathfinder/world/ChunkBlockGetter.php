@@ -29,13 +29,18 @@ use pocketmine\block\VanillaBlocks;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\world\format\Chunk;
+use pocketmine\world\format\SubChunk;
 use pocketmine\world\Position;
 use pocketmine\world\World;
 
 use ReflectionProperty;
+use function count;
+use function max;
+use function min;
 
 /**
  * @phpstan-import-type BlockPosHash from World
+ * @phpstan-import-type ChunkPosHash from World
  */
 class ChunkBlockGetter extends BlockGetter{
 
@@ -51,8 +56,52 @@ class ChunkBlockGetter extends BlockGetter{
 
 	private int $blockCacheSize = 0;
 
+	/**
+	 * Sections may hold any of a set, the chunks don't change while it is used.
+	 *
+	 * @phpstan-var \WeakMap<BlockStateSet, array<ChunkPosHash, array<int, bool>>>
+	 */
+	private \WeakMap $sectionsMayContain;
+
 	public function __construct(private ChunkSource $chunks, int $minY, int $maxY){
 		parent::__construct($minY, $maxY);
+		$this->sectionsMayContain = new \WeakMap();
+	}
+
+	public function mayContainAny(BlockStateSet $states, int $minX, int $minY, int $minZ, int $maxX, int $maxY, int $maxZ) : bool{
+		$minY = max($minY, $this->minY);
+		$maxY = min($maxY, $this->maxY - 1);
+		/** @phpstan-var array<ChunkPosHash, array<int, bool>> $sections */
+		$sections = $this->sectionsMayContain[$states] ?? [];
+		$mayContain = false;
+		for ($chunkX = $minX >> Chunk::COORD_BIT_SIZE; !$mayContain && $chunkX <= $maxX >> Chunk::COORD_BIT_SIZE; ++$chunkX) {
+			for ($chunkZ = $minZ >> Chunk::COORD_BIT_SIZE; !$mayContain && $chunkZ <= $maxZ >> Chunk::COORD_BIT_SIZE; ++$chunkZ) {
+				$chunkHash = World::chunkHash($chunkX, $chunkZ);
+				for ($sectionY = $minY >> SubChunk::COORD_BIT_SIZE; !$mayContain && $sectionY <= $maxY >> SubChunk::COORD_BIT_SIZE; ++$sectionY) {
+					$mayContain = $sections[$chunkHash][$sectionY] ??= $this->sectionMayContain($states, $chunkX, $sectionY, $chunkZ);
+				}
+			}
+		}
+		$this->sectionsMayContain[$states] = $sections;
+		return $mayContain;
+	}
+
+	private function sectionMayContain(BlockStateSet $states, int $chunkX, int $sectionY, int $chunkZ) : bool{
+		$chunk = $this->chunks->getChunk($chunkX, $chunkZ);
+		if ($chunk === null || $sectionY < Chunk::MIN_SUBCHUNK_INDEX || $sectionY > Chunk::MAX_SUBCHUNK_INDEX) {
+			return $states->contains(VanillaBlocks::AIR()->getStateId()); //read as air
+		}
+		$section = $chunk->getSubChunk($sectionY);
+		$layers = $section->getBlockLayers();
+		if (count($layers) === 0) {
+			return $states->contains($section->getEmptyBlockId());
+		}
+		foreach ($layers[0]->getPalette() as $stateId) {
+			if ($states->contains($stateId)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	public function getBlockAt(int $x, int $y, int $z, bool $cached = true, bool $addToCache = true) : Block{

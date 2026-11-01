@@ -206,7 +206,7 @@ class FlightNodeEvaluator extends NodeEvaluator {
 			$node = $this->getNodeAt($x, $y, $z);
 			$node->type = $pathType;
 			$node->costMalus = max($node->costMalus, $malus);
-			if ($pathType->equals(BlockPathType::WALKABLE)) {
+			if ($pathType === BlockPathType::WALKABLE) {
 				// Penalty for low-altitude flying
 				$node->costMalus++;
 			}

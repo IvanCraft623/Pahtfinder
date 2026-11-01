@@ -42,6 +42,14 @@ abstract class BlockGetter {
 		return $this->getBlockAt($pos->getFloorX(), $pos->getFloorY(), $pos->getFloorZ(), $cached, $addToCache);
 	}
 
+	/**
+	 * Whether a block between both corners may be stored as one of $states; true when it can't tell. Adjustments
+	 * the getter makes to blocks it reads, like the open state of a door's top half, are not counted.
+	 */
+	public function mayContainAny(BlockStateSet $states, int $minX, int $minY, int $minZ, int $maxX, int $maxY, int $maxZ) : bool{
+		return true;
+	}
+
 	public function isInWorld(int $x, int $y, int $z) : bool{
 		return (
 			$x <= Limits::INT32_MAX && $x >= Limits::INT32_MIN &&

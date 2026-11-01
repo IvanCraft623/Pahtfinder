@@ -31,16 +31,16 @@ class FlightPathTypeResolver extends PathTypeResolver{
 	public function getBlockPathType(BlockGetter $blockGetter, int $x, int $y, int $z, Vector3 $mobPosition) : BlockPathType{
 		$pathType = BlockClassifier::getRawType($blockGetter, $x, $y, $z);
 
-		if ($pathType->equals(BlockPathType::OPEN) && $y >= $blockGetter->minY + 1) {
+		if ($pathType === BlockPathType::OPEN && $y >= $blockGetter->minY + 1) {
 			$pathTypeDown = BlockClassifier::getRawType($blockGetter, $x, $y - 1, $z);
 
-			if ($pathTypeDown->equals(BlockPathType::DAMAGE_FIRE) || $pathTypeDown->equals(BlockPathType::LAVA)) {
+			if ($pathTypeDown === BlockPathType::DAMAGE_FIRE || $pathTypeDown === BlockPathType::LAVA) {
 				$pathType = BlockPathType::DAMAGE_FIRE;
-			} elseif ($pathTypeDown->equals(BlockPathType::DAMAGE_OTHER)) {
+			} elseif ($pathTypeDown === BlockPathType::DAMAGE_OTHER) {
 				$pathType = BlockPathType::DAMAGE_OTHER;
-			} elseif ($pathTypeDown->equals(BlockPathType::COCOA)) {
+			} elseif ($pathTypeDown === BlockPathType::COCOA) {
 				$pathType = BlockPathType::COCOA;
-			} elseif ($pathTypeDown->equals(BlockPathType::FENCE)) {
+			} elseif ($pathTypeDown === BlockPathType::FENCE) {
 				// Only treat as FENCE if we are not standing at the mob's own position
 				$mobPos = $mobPosition->floor();
 				if ($x !== (int) $mobPos->x || $y !== (int) $mobPos->y || $z !== (int) $mobPos->z) {
@@ -48,14 +48,14 @@ class FlightPathTypeResolver extends PathTypeResolver{
 				}
 			} else {
 				$pathType = (
-					!$pathTypeDown->equals(BlockPathType::WALKABLE) &&
-					!$pathTypeDown->equals(BlockPathType::OPEN) &&
-					!$pathTypeDown->equals(BlockPathType::WATER)
+					$pathTypeDown !== BlockPathType::WALKABLE &&
+					$pathTypeDown !== BlockPathType::OPEN &&
+					$pathTypeDown !== BlockPathType::WATER
 				) ? BlockPathType::WALKABLE : BlockPathType::OPEN;
 			}
 		}
 
-		if ($pathType->equals(BlockPathType::WALKABLE) || $pathType->equals(BlockPathType::OPEN)) {
+		if ($pathType === BlockPathType::WALKABLE || $pathType === BlockPathType::OPEN) {
 			$pathType = BlockClassifier::getNeighbourDanger($blockGetter, $x, $y, $z, $pathType);
 		}
 

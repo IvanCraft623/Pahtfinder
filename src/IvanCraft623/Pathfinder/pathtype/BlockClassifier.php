@@ -25,6 +25,7 @@ namespace IvanCraft623\Pathfinder\pathtype;
 use IvanCraft623\Pathfinder\BlockPathType;
 use IvanCraft623\Pathfinder\PathComputationType;
 use IvanCraft623\Pathfinder\world\BlockGetter;
+use IvanCraft623\Pathfinder\world\BlockStateSet;
 use pocketmine\block\BaseRail;
 use pocketmine\block\Block;
 use pocketmine\block\BlockTypeIds;
@@ -34,6 +35,7 @@ use pocketmine\block\Fence;
 use pocketmine\block\FenceGate;
 use pocketmine\block\Lava;
 use pocketmine\block\Leaves;
+use pocketmine\block\RuntimeBlockStateRegistry;
 use pocketmine\block\Slab;
 use pocketmine\block\Trapdoor;
 use pocketmine\block\Wall;
@@ -45,6 +47,22 @@ use pocketmine\math\Vector3;
  * Path types of blocks on their own, whatever the mob.
  */
 final class BlockClassifier{
+	/**
+	 * Static properties are per thread, so each worker builds its own.
+	 *
+	 * @var BlockPathType[]|false[] type id => raw type of all its states, false if it depends on the state
+	 * @phpstan-var array<int, BlockPathType|false>
+	 */
+	private static array $rawTypesByTypeId = [];
+
+	/**
+	 * @var Block[][]|null type id => its states
+	 * @phpstan-var array<int, list<Block>>|null
+	 */
+	private static ?array $statesByTypeId = null;
+
+	private static ?BlockStateSet $dangerousStates = null;
+
 	private function __construct(){
 	}
 
@@ -53,6 +71,38 @@ final class BlockClassifier{
 	 */
 	public static function getRawType(BlockGetter $blockGetter, int $x, int $y, int $z) : BlockPathType{
 		$block = $blockGetter->getBlockAt($x, $y, $z);
+		$typeId = $block->getTypeId();
+		$rawType = self::$rawTypesByTypeId[$typeId] ?? (self::$rawTypesByTypeId[$typeId] = self::getRawTypeOfAllStates($typeId));
+		return $rawType !== false ? $rawType : self::getBlockRawType($block);
+	}
+
+	/**
+	 * The raw type every state of the block type has, false if it depends on the state.
+	 */
+	private static function getRawTypeOfAllStates(int $typeId) : BlockPathType|false{
+		if (self::$statesByTypeId === null) {
+			self::$statesByTypeId = [];
+			foreach (RuntimeBlockStateRegistry::getInstance()->getAllKnownStates() as $state) {
+				self::$statesByTypeId[$state->getTypeId()][] = $state;
+			}
+		}
+
+		$rawType = false;
+		foreach (self::$statesByTypeId[$typeId] ?? [] as $state) {
+			try {
+				$stateRawType = self::getBlockRawType($state);
+			} catch (\Throwable) {
+				return false; //needs a world to tell
+			}
+			if ($rawType !== false && $stateRawType !== $rawType) {
+				return false;
+			}
+			$rawType = $stateRawType;
+		}
+		return $rawType;
+	}
+
+	private static function getBlockRawType(Block $block) : BlockPathType{
 		$blockId = $block->getTypeId();
 
 		switch (true) {
@@ -107,7 +157,7 @@ final class BlockClassifier{
 				break;
 
 		}
-		return self::isPathfindable($block, PathComputationType::LAND()) ? BlockPathType::OPEN : BlockPathType::BLOCKED;
+		return self::isPathfindable($block, PathComputationType::LAND) ? BlockPathType::OPEN : BlockPathType::BLOCKED;
 	}
 
 	/**
@@ -116,25 +166,25 @@ final class BlockClassifier{
 	public static function getType(BlockGetter $blockGetter, int $x, int $y, int $z) : BlockPathType{
 		$pathType = self::getRawType($blockGetter, $x, $y, $z);
 
-		if ($pathType->equals(BlockPathType::OPEN) && $y >= $blockGetter->minY + 1) {
+		if ($pathType === BlockPathType::OPEN && $y >= $blockGetter->minY + 1) {
 			$pathTypeDown = self::getRawType($blockGetter, $x, $y - 1, $z);
 
-			if ($pathTypeDown->equals(BlockPathType::OPEN) ||
-				$pathTypeDown->equals(BlockPathType::WATER) ||
-				$pathTypeDown->equals(BlockPathType::LAVA) ||
-				$pathTypeDown->equals(BlockPathType::WALKABLE)
+			if ($pathTypeDown === BlockPathType::OPEN ||
+				$pathTypeDown === BlockPathType::WATER ||
+				$pathTypeDown === BlockPathType::LAVA ||
+				$pathTypeDown === BlockPathType::WALKABLE
 			) {
 				// Block below is passable/fluid — we are floating above it
 				$pathType = BlockPathType::OPEN;
 			} else {
 				// Block below is solid-ish — check for hazard overrides first, then fall back to WALKABLE
-				if ($pathTypeDown->equals(BlockPathType::DAMAGE_FIRE)) {
+				if ($pathTypeDown === BlockPathType::DAMAGE_FIRE) {
 					$pathType = BlockPathType::DAMAGE_FIRE;
-				} elseif ($pathTypeDown->equals(BlockPathType::DAMAGE_OTHER)) {
+				} elseif ($pathTypeDown === BlockPathType::DAMAGE_OTHER) {
 					$pathType = BlockPathType::DAMAGE_OTHER;
-				} elseif ($pathTypeDown->equals(BlockPathType::STICKY_HONEY)) {
+				} elseif ($pathTypeDown === BlockPathType::STICKY_HONEY) {
 					$pathType = BlockPathType::STICKY_HONEY;
-				} elseif ($pathTypeDown->equals(BlockPathType::POWDER_SNOW)) {
+				} elseif ($pathTypeDown === BlockPathType::POWDER_SNOW) {
 					$pathType = BlockPathType::DANGER_POWDER_SNOW;
 				} else {
 					$pathType = BlockPathType::WALKABLE;
@@ -142,7 +192,7 @@ final class BlockClassifier{
 			}
 		}
 
-		if ($pathType->equals(BlockPathType::WALKABLE)) {
+		if ($pathType === BlockPathType::WALKABLE) {
 			$pathType = self::getNeighbourDanger($blockGetter, $x, $y, $z, $pathType);
 		}
 
@@ -153,6 +203,11 @@ final class BlockClassifier{
 	 * The danger of the first dangerous block around, or $pathType if there is none.
 	 */
 	public static function getNeighbourDanger(BlockGetter $blockGetter, int $x, int $y, int $z, BlockPathType $pathType) : BlockPathType{
+		self::$dangerousStates ??= BlockStateSet::of(static fn(Block $block) : bool => self::getDanger($block) !== null);
+		if (!$blockGetter->mayContainAny(self::$dangerousStates, $x - 1, $y - 1, $z - 1, $x + 1, $y + 1, $z + 1)) {
+			return $pathType;
+		}
+
 		for ($currentX = -1; $currentX <= 1; $currentX++) {
 			for ($currentY = -1; $currentY <= 1; $currentY++) {
 				for ($currentZ = -1; $currentZ <= 1; $currentZ++) {
@@ -160,24 +215,31 @@ final class BlockClassifier{
 						continue;
 					}
 
-					$block = $blockGetter->getBlockAt($x + $currentX, $y + $currentY, $z + $currentZ);
-					$id = $block->getTypeId();
-
-					if ($id === BlockTypeIds::CACTUS || $id === BlockTypeIds::SWEET_BERRY_BUSH) {
-						return BlockPathType::DANGER_OTHER;
-					}
-
-					if (self::isBurning($block)) {
-						return BlockPathType::DANGER_FIRE;
-					}
-
-					if ($block instanceof Water) {
-						return BlockPathType::WATER_BORDER;
+					$danger = self::getDanger($blockGetter->getBlockAt($x + $currentX, $y + $currentY, $z + $currentZ));
+					if ($danger !== null) {
+						return $danger;
 					}
 				}
 			}
 		}
 		return $pathType;
+	}
+
+	/**
+	 * What being next to the block is, if dangerous.
+	 */
+	private static function getDanger(Block $block) : ?BlockPathType{
+		$id = $block->getTypeId();
+		if ($id === BlockTypeIds::CACTUS || $id === BlockTypeIds::SWEET_BERRY_BUSH) {
+			return BlockPathType::DANGER_OTHER;
+		}
+		if (self::isBurning($block)) {
+			return BlockPathType::DANGER_FIRE;
+		}
+		if ($block instanceof Water) {
+			return BlockPathType::WATER_BORDER;
+		}
+		return null;
 	}
 
 	/**
@@ -202,7 +264,7 @@ final class BlockClassifier{
 
 	public static function isPathfindable(Block $block, PathComputationType $pathType) : bool{
 		if ($block instanceof Door) {
-			if ($pathType->equals(PathComputationType::LAND()) || $pathType->equals(PathComputationType::AIR())) {
+			if ($pathType === PathComputationType::LAND || $pathType === PathComputationType::AIR) {
 				return $block->isOpen();
 			}
 			return false;
@@ -221,18 +283,16 @@ final class BlockClassifier{
 			//TODO: piston arm
 				return false;
 			case BlockTypeIds::DEAD_BUSH:
-				return $pathType->equals(PathComputationType::AIR()) ? true : self::isPathfindableByDefault($block, $pathType);
+				return $pathType === PathComputationType::AIR ? true : self::isPathfindableByDefault($block, $pathType);
 			default:
 				return self::isPathfindableByDefault($block, $pathType);
 		}
 	}
 
 	private static function isPathfindableByDefault(Block $block, PathComputationType $pathType) : bool{
-		return match(true){
-			$pathType->equals(PathComputationType::LAND()) => !$block->isFullCube(),
-			$pathType->equals(PathComputationType::WATER()) => $block instanceof Water, //TODO: watterlogging check
-			$pathType->equals(PathComputationType::AIR()) => !$block->isFullCube(),
-			default => false
+		return match($pathType){
+			PathComputationType::LAND, PathComputationType::AIR => !$block->isFullCube(),
+			PathComputationType::WATER => $block instanceof Water, //TODO: watterlogging check
 		};
 	}
 }

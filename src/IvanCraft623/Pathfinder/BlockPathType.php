@@ -22,11 +22,7 @@ declare(strict_types=1);
 
 namespace IvanCraft623\Pathfinder;
 
-use pocketmine\utils\LegacyEnumShimTrait;
-
 enum BlockPathType{
-	use LegacyEnumShimTrait;
-
 	public const OPEN_MALUS = 0;
 	public const BLOCKED_MALUS = -1;
 

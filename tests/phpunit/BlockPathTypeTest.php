@@ -26,6 +26,7 @@ use IvanCraft623\Pathfinder\pathtype\BlockClassifier;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use pocketmine\block\Block;
+use pocketmine\block\RuntimeBlockStateRegistry;
 use pocketmine\block\VanillaBlocks;
 
 final class BlockPathTypeTest extends TestCase{
@@ -63,6 +64,22 @@ final class BlockPathTypeTest extends TestCase{
 	public function testRawType(Block $block, BlockPathType $expected) : void{
 		$world = (new TestWorld())->set(0, 64, 0, $block);
 		self::assertSame($expected, BlockClassifier::getRawType($world->getBlockGetter(), 0, 64, 0));
+	}
+
+	/**
+	 * Raw types are looked up per block type when all its states agree, so check every state against classifying it.
+	 */
+	public function testEveryStateHasItsOwnRawType() : void{
+		$classify = \Closure::bind(static fn(Block $block) : BlockPathType => self::getBlockRawType($block), null, BlockClassifier::class);
+		$world = new TestWorld();
+		$checked = 0;
+		foreach (RuntimeBlockStateRegistry::getInstance()->getAllKnownStates() as $state) {
+			$world->set(0, 64, 0, $state);
+			$blockGetter = $world->getBlockGetter();
+			self::assertSame($classify($blockGetter->getBlockAt(0, 64, 0)), BlockClassifier::getRawType($blockGetter, 0, 64, 0), $state->getName());
+			++$checked;
+		}
+		self::assertGreaterThan(10000, $checked);
 	}
 
 	public function testTopDoorHalfTakesTheOpenStateOfTheBottomHalf() : void{
