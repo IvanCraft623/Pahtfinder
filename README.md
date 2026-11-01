@@ -39,14 +39,20 @@ php pharynx.phar -i path/to/plugin -c -p my-plugin.phar
 
 ### Finding a path
 
-Both `PathFinder::findPath()` (sync, main thread) and `PathFinder::findPathAsync()`
-(async worker + main-thread callback) always return a `Path` — even on failure.
+Searches run through a `SearchExecutor`: `AsyncSearchExecutor` searches on a worker
+(asking the main thread for any chunk it was not sent), `SyncSearchExecutor` on the
+calling thread. Both return a `PathSearch`, whose promise always resolves with a `Path`.
 
 ```php
-use IvanCraft623\Pathfinder\PathFinder;
+use IvanCraft623\Pathfinder\Path;
 use IvanCraft623\Pathfinder\PathResult;
+use IvanCraft623\Pathfinder\SearchRequest;
 use IvanCraft623\Pathfinder\evaluator\WalkNodeEvaluator;
+use IvanCraft623\Pathfinder\execution\AsyncSearchExecutor;
+use IvanCraft623\Pathfinder\world\Terrain;
 use pocketmine\math\Vector3;
+
+$executor = new AsyncSearchExecutor($server->getAsyncPool(), $plugin->getLogger());
 
 $evaluator = new WalkNodeEvaluator();
 $evaluator->setEntitySize($entity->getSize());
@@ -56,19 +62,20 @@ $evaluator->setMaxUpStep(0.6);
 $evaluator->setMaxFallDistance(3);
 $evaluator->setCanOpenDoors(true);
 
-$path = PathFinder::findPath(
-	$evaluator,
-	$entity->getWorld(),
+$search = $executor->search($evaluator, Terrain::fromWorld($entity->getWorld()), new SearchRequest(
 	$entity->getPosition(),
 	new Vector3(100, 64, 100),
 	maxVisitedNodes: 2000,      // stop searching after this many nodes
 	maxDistanceFromStart: 32,   // do not search further than this from the start
 	reachRange: 1               // consider the target reached within 1 block
-);
+));
+$search->getPromise()->onCompletion(function(Path $path) : void{
+	if ($path->getPathResult() === PathResult::REACHED) {
+		// feed $path into a Navigation, see "Navigation" below
+	}
+}, static function() : void{});
 
-if ($path->getPathResult() === PathResult::REACHED) {
-	// feed $path into a Navigation, see "Navigation" below
-}
+// $search->cancel() stops it; the promise then resolves with PathResult::CANCELLED
 ```
 
 ### Reading the result
@@ -81,8 +88,7 @@ the search ended:
   reached; the path is a best-effort route to the closest node.
 - `PathResult::BLOCKED` — the whole reachable area was searched and the target is
   unreachable; the path is a best-effort route to the closest node.
-- `PathResult::CANCELLED` — the task returned by `findPathAsync()` was cancelled
-  with `cancel()`; the path is empty.
+- `PathResult::CANCELLED` — `PathSearch::cancel()` was called; the path is empty.
 - `PathResult::FAILED` — the asynchronous search threw; the error is logged and the
   path is empty.
 
@@ -94,10 +100,10 @@ the search ended:
 
 An evaluator is your mob's "mobility profile": how big it is, how high it can
 step or fall, whether it opens doors, floats, or swims. Configure one with the
-setters below and pass it to `findPath()` / `findPathAsync()` — the finder calls
+setters below and pass it to a `SearchExecutor` — the search calls
 `prepare()` and `done()` for you.
 
-> When using `findPathAsync()` the evaluator is serialized to the worker thread,
+> With `AsyncSearchExecutor` the evaluator is serialized to the worker thread,
 > so only set thread-safe values on it (numbers, `EntitySizeInfo`, `AxisAlignedBB`).
 >  Never store complex objects like `Entity` as reference.
 
@@ -224,8 +230,10 @@ cutting, path trimming, timeouts).
 
 ```php
 use IvanCraft623\Pathfinder\Path;
-use IvanCraft623\Pathfinder\PathFinder;
+use IvanCraft623\Pathfinder\SearchRequest;
 use IvanCraft623\Pathfinder\evaluator\EntityNodeEvaluator;
+use IvanCraft623\Pathfinder\execution\SearchExecutor;
+use IvanCraft623\Pathfinder\world\Terrain;
 use pocketmine\entity\Entity;
 use pocketmine\math\Vector3;
 use function sqrt;
@@ -237,6 +245,7 @@ final class Navigator {
 	public function __construct(
 		private Entity $entity,
 		private EntityNodeEvaluator $evaluator,
+		private SearchExecutor $executor,
 		private float $speed = 0.4
 	){}
 
@@ -245,18 +254,13 @@ final class Navigator {
 		$this->evaluator->setEntityBoundingBox($this->entity->getBoundingBox());
 		$this->evaluator->setEntityOnGround($this->entity->isOnGround());
 
-		PathFinder::findPathAsync(
-			function (Path $path) : void{
-				$this->path = $path;
-			},
+		$this->executor->search(
 			$this->evaluator,
-			$this->entity->getWorld(),
-			$this->entity->getPosition(),
-			$target,
-			maxVisitedNodes: 2000,
-			maxDistanceFromStart: 32,
-			reachRange: 1
-		);
+			Terrain::fromWorld($this->entity->getWorld()),
+			new SearchRequest($this->entity->getPosition(), $target, maxVisitedNodes: 2000, maxDistanceFromStart: 32)
+		)->getPromise()->onCompletion(function(Path $path) : void{
+			$this->path = $path;
+		}, static function() : void{});
 	}
 
 	public function tick() : void{

@@ -22,22 +22,12 @@ declare(strict_types=1);
 
 namespace IvanCraft623\Pathfinder;
 
+use Closure;
 use IvanCraft623\Pathfinder\evaluator\NodeEvaluator;
-use IvanCraft623\Pathfinder\task\AsyncPathFinderTask;
-use IvanCraft623\Pathfinder\world\SyncBlockGetter;
-
-use pmmp\thread\ThreadSafeArray;
+use IvanCraft623\Pathfinder\world\BlockGetter;
 use pocketmine\math\Vector3;
-use pocketmine\Server;
-use pocketmine\world\format\Chunk;
-use pocketmine\world\format\io\FastChunkSerializer;
-use pocketmine\world\Position;
-use pocketmine\world\World;
-
 use function array_reverse;
 use function floor;
-use function igbinary_serialize;
-use function max;
 use function min;
 use const INF;
 
@@ -46,68 +36,24 @@ class PathFinder {
 	public const FUDGING = 1.5;
 
 	/**
-	 * Attempts to find a path from the position to one of the specified targets.
-	 *
-	 * @param World   $world                The world.
-	 * @param Vector3 $position             Start position.
-	 * @param Vector3 $target               Target to pathfind to.
-	 * @param int     $maxVisitedNodes      Limiting the nodes amount that can be visited.
-	 * @param float   $maxDistanceFromStart Maximum distance at which to search for a path.
-	 * @param int     $reachRange           Distance which the entity can interact with a node.
-	 *
-	 * @return Path Resulting path. Check {@link Path::getPathResult()} to know how the search ended.
+	 * @phpstan-param (Closure() : bool)|null $isCancelled checked between nodes
 	 */
-	public static function findPath(NodeEvaluator $evaluator, World $world, Vector3 $position, Vector3 $target, int $maxVisitedNodes, float $maxDistanceFromStart, int $reachRange = 1) : Path {
-		$evaluator->prepare(new SyncBlockGetter($world), $position);
-		$startNode = $evaluator->getStart();
-
-		$actualTarget = $evaluator->getGoal(
-			(int) floor($target->getX()),
-			(int) floor($target->getY()),
-			(int) floor($target->getZ())
-		);
-		$result = static::actuallyFindPath($evaluator, $startNode, $actualTarget, $maxVisitedNodes, $maxDistanceFromStart, $reachRange);
-
-		$evaluator->done();
-
-		return $result;
-	}
-
-	public static function findPathAsync(\Closure $onCompletion, NodeEvaluator $evaluator, World $world, Vector3 $position, Vector3 $target, int $maxVisitedNodes, float $maxDistanceFromStart, int $reachRange = 1) : AsyncPathFinderTask {
-		//Serialize all chunks between start and end
-		$serializedChunks = [];
-
-		$minX = min($position->getFloorX() >> Chunk::COORD_BIT_SIZE, $target->getFloorX() >> Chunk::COORD_BIT_SIZE);
-		$maxX = max($position->getFloorX() >> Chunk::COORD_BIT_SIZE, $target->getFloorX() >> Chunk::COORD_BIT_SIZE);
-		$minZ = min($position->getFloorZ() >> Chunk::COORD_BIT_SIZE, $target->getFloorZ() >> Chunk::COORD_BIT_SIZE);
-		$maxZ = max($position->getFloorZ() >> Chunk::COORD_BIT_SIZE, $target->getFloorZ() >> Chunk::COORD_BIT_SIZE);
-
-		for($x = $minX; $x <= $maxX; $x++) {
-			for($z = $minZ; $z <= $maxZ; $z++) {
-				$chunk = $world->getChunk($x, $z);
-				if ($chunk !== null) {
-					$serializedChunks[World::chunkHash($x, $z)] = FastChunkSerializer::serializeTerrain($chunk);
-				}
-			}
+	public static function search(NodeEvaluator $evaluator, BlockGetter $blockGetter, SearchRequest $request, ?Closure $isCancelled = null) : Path{
+		$evaluator->prepare($blockGetter, $request->start);
+		try{
+			$target = $request->target;
+			return self::actuallyFindPath(
+				$evaluator,
+				$evaluator->getStart(),
+				$evaluator->getGoal(floor($target->x), floor($target->y), floor($target->z)),
+				$request->maxVisitedNodes,
+				$request->maxDistanceFromStart,
+				$request->reachRange,
+				$isCancelled
+			);
+		}finally{
+			$evaluator->done();
 		}
-
-		//Submit async task
-		Server::getInstance()->getAsyncPool()->submitTask($task = new AsyncPathFinderTask(
-			nodeEvaluator: igbinary_serialize($evaluator) ?? throw new \RuntimeException("Failed to serealize evaluator")
-			,
-			start: igbinary_serialize($position->asVector3()) ?? throw new \RuntimeException("Failed to serealize start"),
-			target: igbinary_serialize($target->asVector3()) ?? throw new \RuntimeException("Failed to serealize target"),
-			worldId: $world->getId(),
-			maxVisitedNodes: $maxVisitedNodes,
-			maxDistanceFromStart: $maxDistanceFromStart,
-			reachRange: $reachRange,
-			defaultChunks: ThreadSafeArray::fromArray($serializedChunks),
-			worldMinY: $world->getMinY(),
-			worldMaxY: $world->getMaxY(),
-			onCompletion: $onCompletion
-		));
-
-		return $task;
 	}
 
 	/**
@@ -119,7 +65,8 @@ class PathFinder {
 		Target $target,
 		int $maxVisitedNodes,
 		float $maxDistanceFromStart,
-		int $reachRange
+		int $reachRange,
+		?Closure $isCancelled = null
 	) : Path {
 		$openSet = new BinaryHeap();
 
@@ -136,6 +83,10 @@ class PathFinder {
 		$result = PathResult::BLOCKED;
 
 		while (!$openSet->isEmpty()) {
+			if ($isCancelled !== null && $isCancelled()) {
+				$result = PathResult::CANCELLED;
+				break;
+			}
 			if (++$visitedNodes >= $maxVisitedNodes) {
 				$result = PathResult::EXHAUSTED;
 

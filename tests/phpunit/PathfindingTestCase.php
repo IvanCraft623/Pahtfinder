@@ -77,17 +77,11 @@ abstract class PathfindingTestCase extends TestCase{
 		float $maxDistanceFromStart = 64,
 		int $reachRange = 0
 	) : Path{
-		$evaluator->prepare($world instanceof TestWorld ? $world->getBlockGetter() : $world, $start);
-		$path = PathFinder::actuallyFindPath(
+		return PathFinder::search(
 			$evaluator,
-			$evaluator->getStart(),
-			$evaluator->getGoal((int) $target->x, (int) $target->y, (int) $target->z),
-			$maxVisitedNodes,
-			$maxDistanceFromStart,
-			$reachRange
+			$world instanceof TestWorld ? $world->getBlockGetter() : $world,
+			new SearchRequest($start, $target, $maxVisitedNodes, $maxDistanceFromStart, $reachRange)
 		);
-		$evaluator->done();
-		return $path;
 	}
 
 	protected static function assertReached(Path $path, Vector3 $target) : void{

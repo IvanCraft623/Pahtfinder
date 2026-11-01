@@ -28,16 +28,16 @@ use IvanCraft623\Pathfinder\evaluator\NodeEvaluator;
 use IvanCraft623\Pathfinder\Path;
 use IvanCraft623\Pathfinder\PathFinder;
 use IvanCraft623\Pathfinder\PathResult;
+use IvanCraft623\Pathfinder\SearchRequest;
 use IvanCraft623\Pathfinder\world\ArrayChunkSource;
 use IvanCraft623\Pathfinder\world\ChunkBlockGetter;
 use IvanCraft623\Pathfinder\world\ChunkRequester;
 use IvanCraft623\Pathfinder\world\RequestingChunkSource;
+use IvanCraft623\Pathfinder\world\Terrain;
 
 use pmmp\thread\ThreadSafeArray;
-use pocketmine\math\Vector3;
 use pocketmine\scheduler\AsyncTask;
 use pocketmine\scheduler\AsyncWorker;
-use pocketmine\Server;
 use pocketmine\world\format\Chunk;
 use pocketmine\world\format\io\FastChunkSerializer;
 use pocketmine\world\World;
@@ -46,6 +46,8 @@ use function igbinary_unserialize;
 class AsyncPathFinderTask extends AsyncTask implements ChunkRequester {
 
 	private const TLS_KEY_COMPLETION_CALLBACK = "completionCallback";
+	private const TLS_KEY_TERRAIN = "terrain";
+	private const TLS_KEY_LOGGER = "logger";
 
 	/** Longest single wait for the main thread's answer, in microseconds; its notify ends the wait at once */
 	private const CHUNK_WAIT_TIMEOUT = 50_000;
@@ -57,29 +59,32 @@ class AsyncPathFinderTask extends AsyncTask implements ChunkRequester {
 
 	private ?string $failure = null; //what the search threw
 
+	private int $minY;
+	private int $maxY;
+
 	/**
-	 * @phpstan-param ThreadSafeArray<int, string> $defaultChunks
+	 * @param string $nodeEvaluator serialized
+	 * @param string $request       serialized {@link SearchRequest}
+	 * @phpstan-param ThreadSafeArray<int, string> $sentChunks World::chunkHash() => serialized chunk
 	 * @phpstan-param Closure(Path $path) : void $onCompletion
 	 */
 	public function __construct(
 		private string $nodeEvaluator,
-		private string $start,
-		private string $target,
-		private int $worldId,
-		private int $maxVisitedNodes,
-		private float $maxDistanceFromStart,
-		private int $reachRange,
-		private ThreadSafeArray $defaultChunks,
-		private int $worldMinY,
-		private int $worldMaxY,
+		private string $request,
+		private ThreadSafeArray $sentChunks,
+		Terrain $terrain, //answers the chunk requests
+		\Logger $logger,
 		Closure $onCompletion,
 	){
+		$this->minY = $terrain->minY;
+		$this->maxY = $terrain->maxY;
 		$this->storeLocal(self::TLS_KEY_COMPLETION_CALLBACK, $onCompletion);
+		$this->storeLocal(self::TLS_KEY_TERRAIN, $terrain);
+		$this->storeLocal(self::TLS_KEY_LOGGER, $logger);
 	}
 
 	/**
-	 * The completion callback then gets an empty path with {@link PathResult::CANCELLED}, and the search is skipped
-	 * if it has not started.
+	 * The completion callback then gets an empty {@link PathResult::CANCELLED} path.
 	 */
 	public function cancel() : void{
 		$this->cancelled = true;
@@ -99,30 +104,22 @@ class AsyncPathFinderTask extends AsyncTask implements ChunkRequester {
 	}
 
 	private function search() : Path{
-		/** @var NodeEvaluator */
+		/** @var NodeEvaluator $evaluator */
 		$evaluator = igbinary_unserialize($this->nodeEvaluator);
-		/** @var Vector3 */
-		$start = igbinary_unserialize($this->start);
-		/** @var Vector3 */
-		$target = igbinary_unserialize($this->target);
 
 		$chunks = new ArrayChunkSource();
-		foreach($this->defaultChunks as $hash => $chunk) {
+		foreach($this->sentChunks as $hash => $chunk) {
 			World::getXZ($hash, $chunkX, $chunkZ);
 			$chunks->setChunk($chunkX, $chunkZ, FastChunkSerializer::deserializeTerrain($chunk));
 		}
-		$blockGetter = new ChunkBlockGetter(new RequestingChunkSource($chunks, $this), $this->worldMinY, $this->worldMaxY);
+		$blockGetter = new ChunkBlockGetter(new RequestingChunkSource($chunks, $this), $this->minY, $this->maxY);
 
-		$evaluator->prepare($blockGetter, $start);
+		return PathFinder::search($evaluator, $blockGetter, $this->getRequest(), fn() : bool => $this->cancelled);
+	}
 
-		return PathFinder::actuallyFindPath(
-			$evaluator,
-			$evaluator->getStart(),
-			$evaluator->getGoal((int) $target->x, (int) $target->y, (int) $target->z),
-			$this->maxVisitedNodes,
-			$this->maxDistanceFromStart,
-			$this->reachRange
-		);
+	private function getRequest() : SearchRequest{
+		/** @var SearchRequest */
+		return igbinary_unserialize($this->request);
 	}
 
 	public function requestChunk(int $chunkX, int $chunkZ) : ?Chunk{
@@ -145,11 +142,11 @@ class AsyncPathFinderTask extends AsyncTask implements ChunkRequester {
 	}
 
 	public function onProgressUpdate($progress) : void{
-		$world = Server::getInstance()->getWorldManager()->getWorld($this->worldId);
-
+		/** @var Terrain $terrain */
+		$terrain = $this->fetchLocal(self::TLS_KEY_TERRAIN);
 		/** @var int $progress */
 		World::getXZ($progress, $chunkX, $chunkZ);
-		$chunk = $world?->getChunk($chunkX, $chunkZ);
+		$chunk = $terrain->chunks->getChunk($chunkX, $chunkZ);
 		$result = $chunk === null ? "" : FastChunkSerializer::serializeTerrain($chunk);
 
 		$this->synchronized(function() use ($result) : void{
@@ -168,7 +165,9 @@ class AsyncPathFinderTask extends AsyncTask implements ChunkRequester {
 
 		$result = $this->getResult();
 		if(!$result instanceof Path) {
-			\GlobalLogger::get()->error("Path search failed: " . ($this->failure ?? "no result"));
+			/** @var \Logger $logger */
+			$logger = $this->fetchLocal(self::TLS_KEY_LOGGER);
+			$logger->error("Path search failed: " . ($this->failure ?? "no result"));
 			($callback)($this->emptyPath(PathResult::FAILED));
 			return;
 		}
@@ -176,8 +175,6 @@ class AsyncPathFinderTask extends AsyncTask implements ChunkRequester {
 	}
 
 	private function emptyPath(PathResult $result) : Path{
-		/** @var Vector3 $target */
-		$target = igbinary_unserialize($this->target);
-		return new Path([], $target, $result);
+		return new Path([], $this->getRequest()->target, $result);
 	}
 }

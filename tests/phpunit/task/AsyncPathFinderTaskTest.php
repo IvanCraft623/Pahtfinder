@@ -26,6 +26,9 @@ use IvanCraft623\Pathfinder\evaluator\WalkNodeEvaluator;
 use IvanCraft623\Pathfinder\Path;
 use IvanCraft623\Pathfinder\PathfindingTestCase;
 use IvanCraft623\Pathfinder\PathResult;
+use IvanCraft623\Pathfinder\SearchRequest;
+use IvanCraft623\Pathfinder\world\ArrayChunkSource;
+use IvanCraft623\Pathfinder\world\Terrain;
 use pmmp\thread\ThreadSafeArray;
 use pocketmine\math\Vector3;
 use pocketmine\world\format\io\FastChunkSerializer;
@@ -36,45 +39,36 @@ use function igbinary_serialize;
  * Runs the task's worker and main thread sides on this thread, with every chunk it reads already sent.
  */
 final class AsyncPathFinderTaskTest extends PathfindingTestCase{
-	/** @phpstan-var \ArrayObject<int, string> messages logged during the test */
+	/** @phpstan-var \ArrayObject<int, string> */
 	private \ArrayObject $logged;
-
-	protected function setUp() : void{
-		$this->logged = new \ArrayObject();
-		\GlobalLogger::set(new class($this->logged) extends \SimpleLogger{
-			/** @phpstan-param \ArrayObject<int, string> $logged */
-			public function __construct(private \ArrayObject $logged){
-			}
-
-			public function log($level, $message){
-				$this->logged[] = $message;
-			}
-		});
-	}
-
-	protected function tearDown() : void{
-		\GlobalLogger::set(new \SimpleLogger());
-	}
 
 	private ?Path $completed = null;
 
+	protected function setUp() : void{
+		$this->logged = new \ArrayObject();
+	}
+
 	private function task(string $serializedEvaluator, Vector3 $start, Vector3 $target) : AsyncPathFinderTask{
-		$chunks = [];
-		foreach (self::flatWorld()->getChunks() as $hash => $chunk) {
-			$chunks[$hash] = FastChunkSerializer::serializeTerrain($chunk);
+		$world = self::flatWorld();
+		$sent = [];
+		foreach ($world->getChunks() as $hash => $chunk) {
+			$sent[$hash] = FastChunkSerializer::serializeTerrain($chunk);
 		}
 		return new AsyncPathFinderTask(
-			nodeEvaluator: $serializedEvaluator,
-			start: igbinary_serialize($start) ?? throw new \AssertionError(),
-			target: igbinary_serialize($target) ?? throw new \AssertionError(),
-			worldId: 0,
-			maxVisitedNodes: 2000,
-			maxDistanceFromStart: 64,
-			reachRange: 0,
-			defaultChunks: ThreadSafeArray::fromArray($chunks),
-			worldMinY: World::Y_MIN,
-			worldMaxY: World::Y_MAX,
-			onCompletion: function(Path $path) : void{
+			$serializedEvaluator,
+			igbinary_serialize(new SearchRequest($start, $target, 2000, 64, 0)) ?? throw new \AssertionError(),
+			ThreadSafeArray::fromArray($sent),
+			new Terrain(new ArrayChunkSource($world->getChunks()), World::Y_MIN, World::Y_MAX),
+			new class($this->logged) extends \SimpleLogger{
+				/** @phpstan-param \ArrayObject<int, string> $logged */
+				public function __construct(private \ArrayObject $logged){
+				}
+
+				public function log($level, $message){
+					$this->logged[] = $message;
+				}
+			},
+			function(Path $path) : void{
 				$this->completed = $path;
 			}
 		);
@@ -121,6 +115,7 @@ final class AsyncPathFinderTaskTest extends PathfindingTestCase{
 		self::assertSame(0, $this->completed->getNodeCount());
 		$logged = $this->logged->getArrayCopy();
 		self::assertCount(1, $logged);
-		self::assertStringContainsString("Path search failed: Error: Call to a member function prepare() on string", $logged[0]);
+		self::assertStringStartsWith('Path search failed: TypeError', $logged[0]);
+		self::assertStringContainsString('must be of type IvanCraft623\\Pathfinder\\evaluator\\NodeEvaluator, string given', $logged[0]);
 	}
 }
