@@ -118,7 +118,38 @@ $executor->search($evaluator, $profile, $terrain, new SearchRequest(
 
 A spliced path keeps the old route, so search from the mob again every few
 splices. `splice()` throws if the continuation does not start at that node or the
-node is behind the mob.
+node is behind the mob; `canSplice()` checks both.
+
+### Repairing a path after a block change
+
+`Path::findDamage()` returns the nodes still to be walked that a changed block
+matters to (`PathDamage::union()` merges several), and `planRepair()` the node to
+search from and the node to rejoin. Search between them with `reachRange: 0` and
+`splice()` the result in; the rest of the old path is kept. Without a rejoin node
+the damage reaches the end of the path, so search to the target.
+
+```php
+$damage = $path->findDamage($x, $y, $z);
+$repair = $damage === null ? null : $path->planRepair($damage);
+if ($repair !== null) {
+	$goal = $repair->rejoin === null ? $path->getTarget() : $path->getNode($repair->rejoin);
+	$executor->search($evaluator, $profile, $terrain, new SearchRequest(
+		$path->getNode($repair->from),
+		$goal,
+		maxVisitedNodes: 300,
+		maxDistanceFromStart: 24,
+		reachRange: $repair->rejoin === null ? $reach : 0,
+		startAtNode: true
+	))->getPromise()->onCompletion(function(Path $bridge) use ($path, $repair) : void{
+		if ($bridge->canReach()) {
+			$this->path = $path->splice($repair->from, $bridge, $repair->rejoin);
+		}
+	}, static function() : void{});
+}
+```
+
+`planRepair()` returns `null` when the damage touches the node the mob just left:
+search from the mob again.
 
 ## 🎛️ Evaluators
 

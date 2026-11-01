@@ -35,9 +35,15 @@ use const INF;
 
 class Path{
 
+	//A corridor column packs, from the lowest bits: min y, max y, last node index, first node index
 	private const CORRIDOR_Y_BITS = 12;
 	private const CORRIDOR_Y_MASK = (1 << self::CORRIDOR_Y_BITS) - 1;
 	private const CORRIDOR_Y_OFFSET = 1 << (self::CORRIDOR_Y_BITS - 1);
+	private const CORRIDOR_INDEX_BITS = 19;
+	private const CORRIDOR_INDEX_MASK = (1 << self::CORRIDOR_INDEX_BITS) - 1;
+	private const CORRIDOR_MAX_Y_SHIFT = self::CORRIDOR_Y_BITS;
+	private const CORRIDOR_LAST_SHIFT = 2 * self::CORRIDOR_Y_BITS;
+	private const CORRIDOR_FIRST_SHIFT = self::CORRIDOR_LAST_SHIFT + self::CORRIDOR_INDEX_BITS;
 
 	/** @var Node[] */
 	private array $nodes;
@@ -59,7 +65,7 @@ class Path{
 	/**
 	 * Blocks the search looked at for the nodes, per column. Null once the nodes changed, until needed again.
 	 *
-	 * @var int[]|null World::chunkHash() of the column => min y, max y and index of the last node using it, packed
+	 * @var int[]|null World::chunkHash() of the column => min y, max y and indexes of the last and first node using it, packed
 	 * @phpstan-var array<int, int>|null
 	 */
 	private ?array $corridor = null;
@@ -76,6 +82,9 @@ class Path{
 	 * @param int    $nodeHeight blocks a node spans on the y axis
 	 */
 	public function __construct(array $nodes, Vector3 $target, PathResult $result, int $nodeWidth = 1, int $nodeHeight = 1){
+		if (count($nodes) > self::CORRIDOR_INDEX_MASK) {
+			throw new \InvalidArgumentException("A path can't have more than " . self::CORRIDOR_INDEX_MASK . " nodes");
+		}
 		$this->nodes = $nodes;
 		$this->nodeCount = count($nodes);
 		$this->target = $target;
@@ -104,10 +113,17 @@ class Path{
 				for ($z = $minZ; $z <= $maxZ; $z++) {
 					$hash = World::chunkHash($x, $z);
 					$column = $corridor[$hash] ?? null;
-					$columnMinY = $column === null ? $minY : min($minY, ($column & self::CORRIDOR_Y_MASK) - self::CORRIDOR_Y_OFFSET);
-					$columnMaxY = $column === null ? $maxY : max($maxY, (($column >> self::CORRIDOR_Y_BITS) & self::CORRIDOR_Y_MASK) - self::CORRIDOR_Y_OFFSET);
-					$corridor[$hash] = ($index << (2 * self::CORRIDOR_Y_BITS)) |
-						(($columnMaxY + self::CORRIDOR_Y_OFFSET) << self::CORRIDOR_Y_BITS) |
+					$first = $index;
+					$columnMinY = $minY;
+					$columnMaxY = $maxY;
+					if ($column !== null) {
+						$first = ($column >> self::CORRIDOR_FIRST_SHIFT) & self::CORRIDOR_INDEX_MASK;
+						$columnMinY = min($minY, ($column & self::CORRIDOR_Y_MASK) - self::CORRIDOR_Y_OFFSET);
+						$columnMaxY = max($maxY, (($column >> self::CORRIDOR_MAX_Y_SHIFT) & self::CORRIDOR_Y_MASK) - self::CORRIDOR_Y_OFFSET);
+					}
+					$corridor[$hash] = ($first << self::CORRIDOR_FIRST_SHIFT) |
+						($index << self::CORRIDOR_LAST_SHIFT) |
+						(($columnMaxY + self::CORRIDOR_Y_OFFSET) << self::CORRIDOR_MAX_Y_SHIFT) |
 						($columnMinY + self::CORRIDOR_Y_OFFSET);
 				}
 			}
@@ -132,15 +148,51 @@ class Path{
 	 * occupies there, the floor, the ring around them, and the column joining it to the previous node.
 	 */
 	public function isInCorridor(int $x, int $y, int $z) : bool{
+		return $this->getCorridorColumn($x, $y, $z) !== null;
+	}
+
+	/**
+	 * The nodes still to be walked that the block at x, y, z matters to, see {@link isInCorridor()}. A column the
+	 * path crosses twice reports both crossings and everything between, so the damage may be wider than it is.
+	 */
+	public function findDamage(int $x, int $y, int $z) : ?PathDamage{
+		$column = $this->getCorridorColumn($x, $y, $z);
+
+		return $column === null ? null : new PathDamage(
+			($column >> self::CORRIDOR_FIRST_SHIFT) & self::CORRIDOR_INDEX_MASK,
+			($column >> self::CORRIDOR_LAST_SHIFT) & self::CORRIDOR_INDEX_MASK
+		);
+	}
+
+	private function getCorridorColumn(int $x, int $y, int $z) : ?int{
 		if ($this->corridor === null) {
 			$this->buildCorridor();
 		}
 		$column = $this->corridor[World::chunkHash($x, $z)] ?? null;
 
-		return $column !== null &&
-			$y >= ($column & self::CORRIDOR_Y_MASK) - self::CORRIDOR_Y_OFFSET &&
-			$y <= (($column >> self::CORRIDOR_Y_BITS) & self::CORRIDOR_Y_MASK) - self::CORRIDOR_Y_OFFSET &&
-			($column >> (2 * self::CORRIDOR_Y_BITS)) >= $this->nextNodeIndex - 1;
+		if ($column === null ||
+			$y < ($column & self::CORRIDOR_Y_MASK) - self::CORRIDOR_Y_OFFSET ||
+			$y > (($column >> self::CORRIDOR_MAX_Y_SHIFT) & self::CORRIDOR_Y_MASK) - self::CORRIDOR_Y_OFFSET ||
+			(($column >> self::CORRIDOR_LAST_SHIFT) & self::CORRIDOR_INDEX_MASK) < $this->nextNodeIndex - 1
+		) {
+			return null;
+		}
+
+		return $column;
+	}
+
+	/**
+	 * How to patch the path around the damage, or null if it reaches the node the mob just left (it may be
+	 * standing on it) and the path has to be searched again from the mob.
+	 */
+	public function planRepair(PathDamage $damage) : ?PathRepair{
+		$from = $damage->first - 1;
+		if ($from < 0 || $from < $this->nextNodeIndex - 1 || $damage->last >= $this->nodeCount) {
+			return null;
+		}
+		$rejoin = $damage->last + 1;
+
+		return new PathRepair($from, $rejoin < $this->nodeCount ? $rejoin : null);
 	}
 
 	/**
@@ -264,21 +316,58 @@ class Path{
 	 * This path up to the node at $index, then $continuation, which starts at that node. The progress made along
 	 * this path is kept, so $index can't be behind the node last walked.
 	 *
+	 * With $rejoinIndex the continuation also ends at that node and the rest of this path is kept after it,
+	 * with its target and result: a detour around the nodes in between.
+	 *
 	 * @throws \InvalidArgumentException
 	 */
-	public function splice(int $index, Path $continuation) : Path{
-		if ($index < $this->nextNodeIndex - 1 || $index >= $this->nodeCount) {
-			throw new \InvalidArgumentException("Can't splice at node $index of $this->nodeCount, node $this->nextNodeIndex is next");
-		}
-		$continuationStart = $continuation->getNodeCount() === 0 ? null : $continuation->getNode(0);
-		if ($continuationStart === null || !$continuationStart->equals($this->nodes[$index])) {
-			throw new \InvalidArgumentException("The continuation does not start at node $index");
+	public function splice(int $index, Path $continuation, ?int $rejoinIndex = null) : Path{
+		$error = $this->getSpliceError($index, $continuation, $rejoinIndex);
+		if ($error !== null) {
+			throw new \InvalidArgumentException($error);
 		}
 
-		$nodes = array_merge(array_slice($this->nodes, 0, $index + 1), array_slice($continuation->nodes, 1));
-		$spliced = new Path($nodes, $continuation->target, $continuation->result, $this->nodeWidth, $this->nodeHeight);
+		$nodes = array_slice($this->nodes, 0, $index + 1);
+		if ($rejoinIndex === null) {
+			$target = $continuation->target;
+			$result = $continuation->result;
+			$tail = array_slice($continuation->nodes, 1);
+		} else {
+			$target = $this->target;
+			$result = $this->result;
+			$tail = array_merge(array_slice($continuation->nodes, 1, $continuation->nodeCount - 2), array_slice($this->nodes, $rejoinIndex));
+		}
+
+		$spliced = new Path(array_merge($nodes, $tail), $target, $result, $this->nodeWidth, $this->nodeHeight);
 		$spliced->nextNodeIndex = $this->nextNodeIndex;
 		return $spliced;
+	}
+
+	/**
+	 * Whether {@link splice()} accepts these arguments, for a path that may have changed since the continuation
+	 * was searched.
+	 */
+	public function canSplice(int $index, Path $continuation, ?int $rejoinIndex = null) : bool{
+		return $this->getSpliceError($index, $continuation, $rejoinIndex) === null;
+	}
+
+	private function getSpliceError(int $index, Path $continuation, ?int $rejoinIndex) : ?string{
+		if ($index < $this->nextNodeIndex - 1 || $index >= $this->nodeCount) {
+			return "Can't splice at node $index of $this->nodeCount, node $this->nextNodeIndex is next";
+		}
+		if ($continuation->nodeCount === 0 || !$continuation->nodes[0]->equals($this->nodes[$index])) {
+			return "The continuation does not start at node $index";
+		}
+		if ($rejoinIndex === null) {
+			return null;
+		}
+		if ($rejoinIndex <= $index || $rejoinIndex >= $this->nodeCount) {
+			return "Can't rejoin at node $rejoinIndex after splicing at $index of $this->nodeCount";
+		}
+		if (!$continuation->nodes[$continuation->nodeCount - 1]->equals($this->nodes[$rejoinIndex])) {
+			return "The continuation does not end at node $rejoinIndex";
+		}
+		return null;
 	}
 
 	public function equals(Path $other) : bool{

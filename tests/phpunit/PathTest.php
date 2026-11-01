@@ -182,6 +182,74 @@ final class PathTest extends TestCase{
 		$path->splice(1, new Path([new Node(1, 64, 0)], new Vector3(1, 64, 0), PathResult::REACHED));
 	}
 
+	public function testSpliceRejoinsTheRestOfThePath() : void{
+		$path = self::path([[0, 64, 0], [1, 64, 0], [2, 64, 0], [3, 64, 0], [4, 64, 0], [5, 64, 0]]);
+		$path->advance();
+		$detour = new Path([new Node(1, 64, 0), new Node(2, 64, 1), new Node(3, 64, 1), new Node(4, 64, 0)], new Vector3(4, 64, 0), PathResult::REACHED);
+
+		$spliced = $path->splice(1, $detour, 4);
+		self::assertTrue($spliced->equals(self::path([[0, 64, 0], [1, 64, 0], [2, 64, 1], [3, 64, 1], [4, 64, 0], [5, 64, 0]])));
+		self::assertSame(1, $spliced->getNextNodeIndex());
+		self::assertTrue($spliced->getTarget()->equals(new Vector3(5, 64, 0)), "keeps the target");
+	}
+
+	public function testSpliceRejoinCanShortcutTheNodesBetween() : void{
+		$path = self::path([[0, 64, 0], [1, 64, 0], [2, 64, 0], [3, 64, 0]]);
+		$shortcut = new Path([new Node(0, 64, 0), new Node(3, 64, 0)], new Vector3(3, 64, 0), PathResult::REACHED);
+
+		self::assertTrue($path->splice(0, $shortcut, 3)->equals(self::path([[0, 64, 0], [3, 64, 0]])));
+	}
+
+	public function testCanSpliceAgreesWithSplice() : void{
+		$path = self::path([[0, 64, 0], [1, 64, 0], [2, 64, 0]]);
+		$path->advance();
+		$path->advance();
+		$detour = new Path([new Node(1, 64, 0), new Node(2, 64, 0)], new Vector3(2, 64, 0), PathResult::REACHED);
+
+		self::assertTrue($path->canSplice(1, $detour, 2));
+		self::assertFalse($path->canSplice(1, $detour, 1), "rejoin is not after the splice");
+		self::assertFalse($path->canSplice(0, $detour), "behind the mob");
+		self::assertFalse($path->canSplice(2, $detour), "starts elsewhere");
+		self::assertFalse($path->canSplice(1, new Path([], new Vector3(0, 0, 0), PathResult::BLOCKED)));
+	}
+
+	public function testDamageIsTheNodesAColumnServes() : void{
+		$path = self::path([[0, 64, 0], [1, 64, 0], [2, 64, 0], [3, 64, 0], [4, 64, 0]]);
+
+		$damage = $path->findDamage(2, 64, 0);
+		self::assertNotNull($damage);
+		self::assertSame([1, 3], [$damage->first, $damage->last], "the node and its ring neighbours");
+		self::assertNull($path->findDamage(2, 80, 0), "above the corridor");
+		self::assertNull($path->findDamage(2, 64, 9));
+		self::assertTrue($path->isInCorridor(2, 64, 0));
+	}
+
+	public function testDamageForgetsWalkedNodes() : void{
+		$path = self::path([[0, 64, 0], [1, 64, 0], [2, 64, 0], [3, 64, 0], [4, 64, 0]]);
+		$path->setNextNodeIndex(3);
+
+		self::assertNull($path->findDamage(0, 64, 0));
+		self::assertNotNull($path->findDamage(2, 64, 0), "the node being left is still there");
+	}
+
+	public function testRepairBetweenTheNodesAroundTheDamage() : void{
+		$path = self::path([[0, 64, 0], [1, 64, 0], [2, 64, 0], [3, 64, 0], [4, 64, 0], [5, 64, 0]]);
+		$path->advance();
+
+		$repair = $path->planRepair(new PathDamage(3, 4));
+		self::assertSame([2, 5], [$repair?->from, $repair?->rejoin]);
+	}
+
+	public function testNoRepairWhenTheMobMayBeStandingOnTheDamage() : void{
+		$path = self::path([[0, 64, 0], [1, 64, 0], [2, 64, 0], [3, 64, 0], [4, 64, 0]]);
+		self::assertNull($path->planRepair(new PathDamage(0, 1)), "the start");
+
+		$path->setNextNodeIndex(3);
+		self::assertNull($path->planRepair(new PathDamage(2, 3)), "the node just left");
+		self::assertNull($path->planRepair(new PathDamage(1, 2)), "behind the mob");
+		self::assertSame(2, $path->planRepair(new PathDamage(3, 3))?->from, "the node being walked to"); //3 is next
+	}
+
 	public function testEquals() : void{
 		$a = self::path([[0, 64, 0], [1, 64, 0]]);
 		self::assertTrue($a->equals(self::path([[0, 64, 0], [1, 64, 0]])));
