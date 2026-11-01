@@ -22,8 +22,6 @@ declare(strict_types=1);
 
 namespace IvanCraft623\Pathfinder\world;
 
-use IvanCraft623\Pathfinder\task\AsyncPathFinderTask;
-
 use pocketmine\block\Block;
 use pocketmine\block\Door;
 use pocketmine\block\RuntimeBlockStateRegistry;
@@ -31,39 +29,19 @@ use pocketmine\block\VanillaBlocks;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\world\format\Chunk;
-use pocketmine\world\format\io\FastChunkSerializer;
 use pocketmine\world\Position;
 use pocketmine\world\World;
 
 use ReflectionProperty;
-use function array_key_exists;
-use function array_shift;
-use function count;
 
 /**
- * @phpstan-import-type ChunkPosHash from World
  * @phpstan-import-type BlockPosHash from World
  */
-class AsyncBlockGetter extends BlockGetter{
+class ChunkBlockGetter extends BlockGetter{
 
-	/** @phpstan-import-type ChunkPosHash from World */
 	private const BLOCK_CACHE_SIZE_CAP = 2048;
 
-	private const MAX_CACHED_CHUNKS = 64;
-
 	private bool $inDynamicStateRecalculation = false;
-
-	/**
-	 * @var Chunk[]
-	 * @phpstan-var array<ChunkPosHash, ?Chunk>
-	 */
-	private array $chunks = [];
-
-	/**
-	 * @var int[]
-	 * @phpstan-var array<int, ChunkPosHash> insertion-ordered chunk hashes
-	 */
-	private array $chunkOrder = [];
 
 	/**
 	 * @var Block[]
@@ -73,7 +51,7 @@ class AsyncBlockGetter extends BlockGetter{
 
 	private int $blockCacheSize = 0;
 
-	public function __construct(protected AsyncPathFinderTask $task, int $minY, int $maxY){
+	public function __construct(private ChunkSource $chunks, int $minY, int $maxY){
 		parent::__construct($minY, $maxY);
 	}
 
@@ -88,7 +66,7 @@ class AsyncBlockGetter extends BlockGetter{
 				return $this->blocksCache[$blockHash];
 			}
 
-			if (($chunk = $this->getChunkAt($x, $z)) === null) {
+			if (($chunk = $this->chunks->getChunk($x >> Chunk::COORD_BIT_SIZE, $z >> Chunk::COORD_BIT_SIZE)) === null) {
 				$block = VanillaBlocks::AIR();
 			} else {
 				$block = RuntimeBlockStateRegistry::getInstance()->fromStateId(
@@ -121,47 +99,6 @@ class AsyncBlockGetter extends BlockGetter{
 		}
 
 		return $block;
-	}
-
-	protected function getChunkAt(int $x, int $z) : ?Chunk {
-		$chunkX = $x >> Chunk::COORD_BIT_SIZE;
-		$chunkZ = $z >> Chunk::COORD_BIT_SIZE;
-		$hash = World::chunkHash($chunkX, $chunkZ);
-
-		//Check the chunk has been already loaded
-		if(!array_key_exists($hash, $this->chunks)) {
-			$chunk = $this->task->requestChunk($hash);
-			if($chunk === null) {
-				return null;
-			}
-
-			if($chunk === "") { //failed to get the chunk :c
-				$this->cacheChunk($hash, null);
-			} else {
-				$this->cacheChunk($hash, FastChunkSerializer::deserializeTerrain($chunk));
-			}
-		}
-
-		return $this->chunks[$hash] ?? null;
-	}
-
-	public function setChunk(int $chunkX, int $chunkZ, Chunk $chunk) : void {
-		$this->cacheChunk(World::chunkHash($chunkX, $chunkZ), $chunk);
-	}
-
-	/**
-	 * @phpstan-param ChunkPosHash $hash
-	 */
-	private function cacheChunk(int $hash, ?Chunk $chunk) : void {
-		if(!array_key_exists($hash, $this->chunks)) {
-			$this->chunkOrder[] = $hash;
-		}
-		$this->chunks[$hash] = $chunk;
-
-		while(count($this->chunkOrder) > self::MAX_CACHED_CHUNKS) {
-			$oldest = array_shift($this->chunkOrder);
-			unset($this->chunks[$oldest]);
-		}
 	}
 
 	private function positionBlock(Block $block, Position $position) : void{

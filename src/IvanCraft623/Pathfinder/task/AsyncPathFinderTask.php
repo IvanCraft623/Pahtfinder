@@ -28,18 +28,22 @@ use IvanCraft623\Pathfinder\evaluator\NodeEvaluator;
 use IvanCraft623\Pathfinder\Path;
 use IvanCraft623\Pathfinder\PathFinder;
 use IvanCraft623\Pathfinder\PathResult;
-use IvanCraft623\Pathfinder\world\AsyncBlockGetter;
+use IvanCraft623\Pathfinder\world\ArrayChunkSource;
+use IvanCraft623\Pathfinder\world\ChunkBlockGetter;
+use IvanCraft623\Pathfinder\world\ChunkRequester;
+use IvanCraft623\Pathfinder\world\RequestingChunkSource;
 
 use pmmp\thread\ThreadSafeArray;
 use pocketmine\math\Vector3;
 use pocketmine\scheduler\AsyncTask;
 use pocketmine\scheduler\AsyncWorker;
 use pocketmine\Server;
+use pocketmine\world\format\Chunk;
 use pocketmine\world\format\io\FastChunkSerializer;
 use pocketmine\world\World;
 use function igbinary_unserialize;
 
-class AsyncPathFinderTask extends AsyncTask {
+class AsyncPathFinderTask extends AsyncTask implements ChunkRequester {
 
 	private const TLS_KEY_COMPLETION_CALLBACK = "completionCallback";
 
@@ -50,6 +54,8 @@ class AsyncPathFinderTask extends AsyncTask {
 	private string $missingChunkResult;
 
 	private bool $cancelled = false;
+
+	private ?string $failure = null; //what the search threw
 
 	/**
 	 * @phpstan-param ThreadSafeArray<int, string> $defaultChunks
@@ -84,48 +90,49 @@ class AsyncPathFinderTask extends AsyncTask {
 			return;
 		}
 
+		//a throw here kills the worker and crashes the server
+		try{
+			$this->setResult($this->search());
+		}catch(\Throwable $e){
+			$this->failure = (string) $e;
+		}
+	}
+
+	private function search() : Path{
 		/** @var NodeEvaluator */
 		$evaluator = igbinary_unserialize($this->nodeEvaluator);
-		$blockGetter = new AsyncBlockGetter($this, $this->worldMinY, $this->worldMaxY);
-
 		/** @var Vector3 */
 		$start = igbinary_unserialize($this->start);
 		/** @var Vector3 */
 		$target = igbinary_unserialize($this->target);
 
+		$chunks = new ArrayChunkSource();
 		foreach($this->defaultChunks as $hash => $chunk) {
 			World::getXZ($hash, $chunkX, $chunkZ);
-			$blockGetter->setChunk($chunkX, $chunkZ, FastChunkSerializer::deserializeTerrain($chunk));
+			$chunks->setChunk($chunkX, $chunkZ, FastChunkSerializer::deserializeTerrain($chunk));
 		}
+		$blockGetter = new ChunkBlockGetter(new RequestingChunkSource($chunks, $this), $this->worldMinY, $this->worldMaxY);
 
 		$evaluator->prepare($blockGetter, $start);
 
-		$this->setResult(PathFinder::actuallyFindPath(
+		return PathFinder::actuallyFindPath(
 			$evaluator,
 			$evaluator->getStart(),
 			$evaluator->getGoal((int) $target->x, (int) $target->y, (int) $target->z),
 			$this->maxVisitedNodes,
 			$this->maxDistanceFromStart,
 			$this->reachRange
-		));
+		);
 	}
 
-	/**
-	 * Asks the main thread for a chunk and blocks the worker until it answers.
-	 *
-	 * @return string|null the serialized chunk, empty if it is not available, null if the task was terminated
-	 */
-	public function requestChunk(int $chunkHash) : ?string{
-		$this->publishProgress($chunkHash);
+	public function requestChunk(int $chunkX, int $chunkZ) : ?Chunk{
+		$this->publishProgress(World::chunkHash($chunkX, $chunkZ));
 		//Progress is otherwise only looked at once per tick
 		AsyncWorker::getNotifier()->wakeupSleeper();
 
-		/** @var string|null $chunk */
-		$chunk = $this->synchronized(function() : ?string{
+		/** @var string $chunk */
+		$chunk = $this->synchronized(function() : string{
 			while(!isset($this->missingChunkResult)) {
-				if($this->isTerminated()) {
-					return null;
-				}
 				$this->wait(self::CHUNK_WAIT_TIMEOUT);
 			}
 
@@ -134,7 +141,7 @@ class AsyncPathFinderTask extends AsyncTask {
 			return $chunk;
 		});
 
-		return $chunk;
+		return $chunk === "" ? null : FastChunkSerializer::deserializeTerrain($chunk);
 	}
 
 	public function onProgressUpdate($progress) : void{
@@ -152,15 +159,25 @@ class AsyncPathFinderTask extends AsyncTask {
 	}
 
 	public function onCompletion() : void{
-		/** @var Closure $callback */
+		/** @phpstan-var Closure(Path) : void $callback */
 		$callback = $this->fetchLocal(self::TLS_KEY_COMPLETION_CALLBACK);
 		if($this->cancelled) {
-			/** @var Vector3 $target */
-			$target = igbinary_unserialize($this->target);
-			($callback)(new Path([], $target, PathResult::CANCELLED));
+			($callback)($this->emptyPath(PathResult::CANCELLED));
 			return;
 		}
 
-		($callback)($this->getResult());
+		$result = $this->getResult();
+		if(!$result instanceof Path) {
+			\GlobalLogger::get()->error("Path search failed: " . ($this->failure ?? "no result"));
+			($callback)($this->emptyPath(PathResult::FAILED));
+			return;
+		}
+		($callback)($result);
+	}
+
+	private function emptyPath(PathResult $result) : Path{
+		/** @var Vector3 $target */
+		$target = igbinary_unserialize($this->target);
+		return new Path([], $target, $result);
 	}
 }

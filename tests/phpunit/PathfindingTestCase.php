@@ -24,6 +24,7 @@ namespace IvanCraft623\Pathfinder;
 
 use IvanCraft623\Pathfinder\evaluator\EntityNodeEvaluator;
 use IvanCraft623\Pathfinder\evaluator\NodeEvaluator;
+use IvanCraft623\Pathfinder\world\BlockGetter;
 use PHPUnit\Framework\TestCase;
 use pocketmine\block\VanillaBlocks;
 use pocketmine\entity\EntitySizeInfo;
@@ -69,14 +70,14 @@ abstract class PathfindingTestCase extends TestCase{
 	 */
 	protected static function search(
 		NodeEvaluator $evaluator,
-		TestWorld $world,
+		TestWorld|BlockGetter $world,
 		Vector3 $start,
 		Vector3 $target,
 		int $maxVisitedNodes = 2000,
 		float $maxDistanceFromStart = 64,
 		int $reachRange = 0
 	) : Path{
-		$evaluator->prepare($world->getBlockGetter(), $start);
+		$evaluator->prepare($world instanceof TestWorld ? $world->getBlockGetter() : $world, $start);
 		$path = PathFinder::actuallyFindPath(
 			$evaluator,
 			$evaluator->getStart(),

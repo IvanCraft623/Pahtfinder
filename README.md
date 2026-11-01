@@ -83,6 +83,8 @@ the search ended:
   unreachable; the path is a best-effort route to the closest node.
 - `PathResult::CANCELLED` — the task returned by `findPathAsync()` was cancelled
   with `cancel()`; the path is empty.
+- `PathResult::FAILED` — the asynchronous search threw; the error is logged and the
+  path is empty.
 
 `Path::canReach()` is shorthand for `getPathResult() === PathResult::REACHED`.
 

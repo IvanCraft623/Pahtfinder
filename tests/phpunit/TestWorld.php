@@ -22,19 +22,22 @@ declare(strict_types=1);
 
 namespace IvanCraft623\Pathfinder;
 
-use IvanCraft623\Pathfinder\world\AsyncBlockGetter;
+use IvanCraft623\Pathfinder\world\ArrayChunkSource;
 use IvanCraft623\Pathfinder\world\BlockGetter;
+use IvanCraft623\Pathfinder\world\ChunkBlockGetter;
 use pocketmine\block\Block;
 use pocketmine\world\format\Chunk;
 use pocketmine\world\World;
 
 /**
  * In-memory world; unset chunks read as air, like chunks the main thread could not send.
+ *
+ * @phpstan-import-type ChunkPosHash from World
  */
 final class TestWorld{
 	/**
 	 * @var Chunk[]
-	 * @phpstan-var array<int, Chunk>
+	 * @phpstan-var array<ChunkPosHash, Chunk>
 	 */
 	private array $chunks = [];
 
@@ -60,22 +63,17 @@ final class TestWorld{
 	}
 
 	/**
+	 * @return Chunk[] World::chunkHash() => chunk
+	 * @phpstan-return array<ChunkPosHash, Chunk>
+	 */
+	public function getChunks() : array{
+		return $this->chunks;
+	}
+
+	/**
 	 * A getter reading this world the way the worker does, with every chunk already sent.
 	 */
 	public function getBlockGetter() : BlockGetter{
-		$chunks = $this->chunks;
-		return new class($chunks) extends AsyncBlockGetter{
-			/**
-			 * @phpstan-param array<int, Chunk> $chunks
-			 */
-			public function __construct(private array $chunks){
-				//Skips AsyncBlockGetter's constructor: there is no task to request chunks from
-				BlockGetter::__construct(World::Y_MIN, World::Y_MAX);
-			}
-
-			protected function getChunkAt(int $x, int $z) : ?Chunk{
-				return $this->chunks[World::chunkHash($x >> Chunk::COORD_BIT_SIZE, $z >> Chunk::COORD_BIT_SIZE)] ?? null;
-			}
-		};
+		return new ChunkBlockGetter(new ArrayChunkSource($this->chunks), World::Y_MIN, World::Y_MAX);
 	}
 }

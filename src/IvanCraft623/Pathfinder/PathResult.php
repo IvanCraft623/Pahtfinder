@@ -27,4 +27,5 @@ enum PathResult{
 	case EXHAUSTED;
 	case BLOCKED;
 	case CANCELLED;
+	case FAILED; //the search threw
 }
