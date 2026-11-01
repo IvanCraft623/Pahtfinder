@@ -75,6 +75,9 @@ class FlightNodeEvaluator extends WalkNodeEvaluator {
 		return $this->pathTypeCostMap->getPathfindingMalus($pathType) >= 0;
 	}
 
+	/**
+	 * @return Vector3[]
+	 */
 	private function getStartNodeCandidates() : array{
 		$bb = $this->getEntityBoundingBox();
 		$blockY = (int) floor($this->startPosition->y);

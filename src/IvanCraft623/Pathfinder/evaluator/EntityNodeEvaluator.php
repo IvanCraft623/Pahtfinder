@@ -26,7 +26,6 @@ use pocketmine\block\Liquid;
 use pocketmine\block\Water;
 use pocketmine\entity\EntitySizeInfo;
 use pocketmine\math\AxisAlignedBB;
-use function array_flip;
 use function floor;
 
 abstract class EntityNodeEvaluator extends NodeEvaluator {
@@ -48,6 +47,7 @@ abstract class EntityNodeEvaluator extends NodeEvaluator {
 	protected float $maxUpStep;
 	protected int $maxFallDistance;
 
+	/** @var true[] block type id => true */
 	protected array $liquidsThatCanStandOn = [];
 
 	 public function setCanPassDoors(bool $canPassDoors = true) : void {
@@ -87,7 +87,10 @@ abstract class EntityNodeEvaluator extends NodeEvaluator {
 	}
 
 	public function setLiquidsThatCanStandOn(int ...$blockTypeIds) : void{
-		$this->liquidsThatCanStandOn = array_flip($blockTypeIds);
+		$this->liquidsThatCanStandOn = [];
+		foreach ($blockTypeIds as $blockTypeId) {
+			$this->liquidsThatCanStandOn[$blockTypeId] = true;
+		}
 	}
 
 	public function setMaxFallDistance(int $blocks) : void{

@@ -168,6 +168,9 @@ class BinaryHeap {
 		return $this->size === 0;
 	}
 
+	/**
+	 * @return Node[]
+	 */
 	public function getHeap() : array {
 		return array_slice($this->heap, 0, $this->size);
 	}

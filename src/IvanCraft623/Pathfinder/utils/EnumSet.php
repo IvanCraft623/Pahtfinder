@@ -46,8 +46,8 @@ final class EnumSet implements \IteratorAggregate{
 	 */
 	public function __construct(private string $enumClass) {
 		foreach ($enumClass::getAll() as $element) { // @phpstan-ignore-line
-			$this->elements[$element->id()] = false; // @phpstan-ignore-line
-			$this->allElements[$element->id()] = $element; // @phpstan-ignore-line
+			$this->elements[$element->id()] = false;
+			$this->allElements[$element->id()] = $element;
 		}
 	}
 
