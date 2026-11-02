@@ -122,15 +122,15 @@ node is behind the mob; `canSplice()` checks both.
 
 ### Repairing a path after a block change
 
-`Path::findDamage()` returns the nodes still to be walked that a changed block
-matters to (`PathDamage::union()` merges several), and `planRepair()` the node to
+`Path::findInvalidation()` returns the nodes still to be walked that a changed block
+matters to (`PathInvalidation::union()` merges several), and `planRepair()` the node to
 search from and the node to rejoin. Search between them with `reachRange: 0` and
 `splice()` the result in; the rest of the old path is kept. Without a rejoin node
-the damage reaches the end of the path, so search to the target.
+the invalidated nodes reach the end of the path, so search to the target.
 
 ```php
-$damage = $path->findDamage($x, $y, $z);
-$repair = $damage === null ? null : $path->planRepair($damage);
+$invalidation = $path->findInvalidation($x, $y, $z);
+$repair = $invalidation === null ? null : $path->planRepair($invalidation);
 if ($repair !== null) {
 	$goal = $repair->rejoin === null ? $path->getTarget() : $path->getNode($repair->rejoin);
 	$executor->search($evaluator, $profile, $terrain, new SearchRequest(
@@ -148,7 +148,7 @@ if ($repair !== null) {
 }
 ```
 
-`planRepair()` returns `null` when the damage touches the node the mob just left:
+`planRepair()` returns `null` when the invalidation touches the node the mob just left:
 search from the mob again.
 
 ## 🎛️ Evaluators

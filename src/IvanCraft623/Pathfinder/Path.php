@@ -153,12 +153,12 @@ class Path{
 
 	/**
 	 * The nodes still to be walked that the block at x, y, z matters to, see {@link isInCorridor()}. A column the
-	 * path crosses twice reports both crossings and everything between, so the damage may be wider than it is.
+	 * path crosses twice reports both crossings and everything between, so the invalidation may be wider than it is.
 	 */
-	public function findDamage(int $x, int $y, int $z) : ?PathDamage{
+	public function findInvalidation(int $x, int $y, int $z) : ?PathInvalidation{
 		$column = $this->getCorridorColumn($x, $y, $z);
 
-		return $column === null ? null : new PathDamage(
+		return $column === null ? null : new PathInvalidation(
 			($column >> self::CORRIDOR_FIRST_SHIFT) & self::CORRIDOR_INDEX_MASK,
 			($column >> self::CORRIDOR_LAST_SHIFT) & self::CORRIDOR_INDEX_MASK
 		);
@@ -182,15 +182,15 @@ class Path{
 	}
 
 	/**
-	 * How to patch the path around the damage, or null if it reaches the node the mob just left (it may be
+	 * How to patch the path around the invalidation, or null if it reaches the node the mob just left (it may be
 	 * standing on it) and the path has to be searched again from the mob.
 	 */
-	public function planRepair(PathDamage $damage) : ?PathRepair{
-		$from = $damage->first - 1;
-		if ($from < 0 || $from < $this->nextNodeIndex - 1 || $damage->last >= $this->nodeCount) {
+	public function planRepair(PathInvalidation $invalidation) : ?PathRepair{
+		$from = $invalidation->first - 1;
+		if ($from < 0 || $from < $this->nextNodeIndex - 1 || $invalidation->last >= $this->nodeCount) {
 			return null;
 		}
-		$rejoin = $damage->last + 1;
+		$rejoin = $invalidation->last + 1;
 
 		return new PathRepair($from, $rejoin < $this->nodeCount ? $rejoin : null);
 	}

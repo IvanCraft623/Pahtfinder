@@ -213,41 +213,41 @@ final class PathTest extends TestCase{
 		self::assertFalse($path->canSplice(1, new Path([], new Vector3(0, 0, 0), PathResult::BLOCKED)));
 	}
 
-	public function testDamageIsTheNodesAColumnServes() : void{
+	public function testInvalidationIsTheNodesAColumnServes() : void{
 		$path = self::path([[0, 64, 0], [1, 64, 0], [2, 64, 0], [3, 64, 0], [4, 64, 0]]);
 
-		$damage = $path->findDamage(2, 64, 0);
-		self::assertNotNull($damage);
-		self::assertSame([1, 3], [$damage->first, $damage->last], "the node and its ring neighbours");
-		self::assertNull($path->findDamage(2, 80, 0), "above the corridor");
-		self::assertNull($path->findDamage(2, 64, 9));
+		$invalidation = $path->findInvalidation(2, 64, 0);
+		self::assertNotNull($invalidation);
+		self::assertSame([1, 3], [$invalidation->first, $invalidation->last], "the node and its ring neighbours");
+		self::assertNull($path->findInvalidation(2, 80, 0), "above the corridor");
+		self::assertNull($path->findInvalidation(2, 64, 9));
 		self::assertTrue($path->isInCorridor(2, 64, 0));
 	}
 
-	public function testDamageForgetsWalkedNodes() : void{
+	public function testInvalidationForgetsWalkedNodes() : void{
 		$path = self::path([[0, 64, 0], [1, 64, 0], [2, 64, 0], [3, 64, 0], [4, 64, 0]]);
 		$path->setNextNodeIndex(3);
 
-		self::assertNull($path->findDamage(0, 64, 0));
-		self::assertNotNull($path->findDamage(2, 64, 0), "the node being left is still there");
+		self::assertNull($path->findInvalidation(0, 64, 0));
+		self::assertNotNull($path->findInvalidation(2, 64, 0), "the node being left is still there");
 	}
 
-	public function testRepairBetweenTheNodesAroundTheDamage() : void{
+	public function testRepairBetweenTheNodesAroundTheInvalidation() : void{
 		$path = self::path([[0, 64, 0], [1, 64, 0], [2, 64, 0], [3, 64, 0], [4, 64, 0], [5, 64, 0]]);
 		$path->advance();
 
-		$repair = $path->planRepair(new PathDamage(3, 4));
+		$repair = $path->planRepair(new PathInvalidation(3, 4));
 		self::assertSame([2, 5], [$repair?->from, $repair?->rejoin]);
 	}
 
-	public function testNoRepairWhenTheMobMayBeStandingOnTheDamage() : void{
+	public function testNoRepairWhenTheMobMayBeStandingOnTheInvalidation() : void{
 		$path = self::path([[0, 64, 0], [1, 64, 0], [2, 64, 0], [3, 64, 0], [4, 64, 0]]);
-		self::assertNull($path->planRepair(new PathDamage(0, 1)), "the start");
+		self::assertNull($path->planRepair(new PathInvalidation(0, 1)), "the start");
 
 		$path->setNextNodeIndex(3);
-		self::assertNull($path->planRepair(new PathDamage(2, 3)), "the node just left");
-		self::assertNull($path->planRepair(new PathDamage(1, 2)), "behind the mob");
-		self::assertSame(2, $path->planRepair(new PathDamage(3, 3))?->from, "the node being walked to"); //3 is next
+		self::assertNull($path->planRepair(new PathInvalidation(2, 3)), "the node just left");
+		self::assertNull($path->planRepair(new PathInvalidation(1, 2)), "behind the mob");
+		self::assertSame(2, $path->planRepair(new PathInvalidation(3, 3))?->from, "the node being walked to"); //3 is next
 	}
 
 	public function testEquals() : void{

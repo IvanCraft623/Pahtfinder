@@ -52,10 +52,10 @@ final class PathRepairTest extends PathfindingTestCase{
 	 *
 	 * @return array{Path, PathRepair, int} the repaired path, the repair and how many nodes the repair expanded
 	 */
-	private static function repair(Path $path, TestWorld $changed, int $x, int $y, int $z, ?PathDamage $known = null) : array{
-		$damage = $path->findDamage($x, $y, $z);
-		self::assertNotNull($damage, "the change is on the path");
-		$repair = $path->planRepair($known?->union($damage) ?? $damage);
+	private static function repair(Path $path, TestWorld $changed, int $x, int $y, int $z, ?PathInvalidation $known = null) : array{
+		$invalidation = $path->findInvalidation($x, $y, $z);
+		self::assertNotNull($invalidation, "the change is on the path");
+		$repair = $path->planRepair($known?->union($invalidation) ?? $invalidation);
 		self::assertNotNull($repair);
 
 		$target = $repair->rejoin === null ? $path->getTarget() : $path->getNode($repair->rejoin);
@@ -102,7 +102,7 @@ final class PathRepairTest extends PathfindingTestCase{
 		}
 	}
 
-	public function testDamageInTheEndRepairsToTheTarget() : void{
+	public function testInvalidationInTheEndRepairsToTheTarget() : void{
 		$world = self::flatWorld();
 		$target = self::standingAt(20, 5);
 		[$path] = self::countedSearch($world, self::standingAt(2, 5), $target);
@@ -120,7 +120,7 @@ final class PathRepairTest extends PathfindingTestCase{
 		$target = self::standingAt(28, 5);
 		[$path] = self::countedSearch($world, self::standingAt(2, 5), $target);
 
-		$first = $path->findDamage(10, self::Y, 5);
+		$first = $path->findInvalidation(10, self::Y, 5);
 		$changed = $world->fill(10, self::Y, 3, 10, self::Y + 1, 7, VanillaBlocks::STONE())->fill(20, self::Y, 3, 20, self::Y + 1, 7, VanillaBlocks::STONE());
 		[$repaired, $repair] = self::repair($path, $changed, 20, self::Y, 5, $first);
 

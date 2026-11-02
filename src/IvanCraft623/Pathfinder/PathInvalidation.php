@@ -28,14 +28,14 @@ use function min;
 /**
  * The nodes of a path that a block change matters to.
  */
-final class PathDamage{
+final class PathInvalidation{
 	public function __construct(
 		public readonly int $first,
 		public readonly int $last
 	){
 	}
 
-	public function union(PathDamage $other) : PathDamage{
-		return new PathDamage(min($this->first, $other->first), max($this->last, $other->last));
+	public function union(PathInvalidation $other) : PathInvalidation{
+		return new PathInvalidation(min($this->first, $other->first), max($this->last, $other->last));
 	}
 }
