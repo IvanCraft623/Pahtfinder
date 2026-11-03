@@ -37,6 +37,7 @@ use pocketmine\block\Lava;
 use pocketmine\block\Leaves;
 use pocketmine\block\RuntimeBlockStateRegistry;
 use pocketmine\block\Slab;
+use pocketmine\block\Stair;
 use pocketmine\block\Trapdoor;
 use pocketmine\block\Wall;
 use pocketmine\block\Water;
@@ -47,6 +48,15 @@ use pocketmine\math\Vector3;
  * Path types of blocks on their own, whatever the mob.
  */
 final class BlockClassifier{
+	/** Tallest shape a mob walks over instead of around */
+	private const MAX_WALK_OVER_HEIGHT = 0.6;
+
+	/**
+	 * @var bool[] state id => whether a mob can enter its cell
+	 * @phpstan-var array<int, bool>
+	 */
+	private static array $lowShapes = [];
+
 	/**
 	 * Static properties are per thread, so each worker builds its own.
 	 *
@@ -291,8 +301,23 @@ final class BlockClassifier{
 
 	private static function isPathfindableByDefault(Block $block, PathComputationType $pathType) : bool{
 		return match($pathType){
-			PathComputationType::LAND, PathComputationType::AIR => !$block->isFullCube(),
+			PathComputationType::LAND, PathComputationType::AIR => self::hasWalkableShape($block),
 			PathComputationType::WATER => $block instanceof Water, //TODO: watterlogging check
 		};
+	}
+
+	private static function hasWalkableShape(Block $block) : bool{
+		return self::$lowShapes[$block->getStateId()] ??= self::isShapeLow($block) || $block instanceof Stair;
+	}
+
+	private static function isShapeLow(Block $block) : bool{
+		//The registry's block has its shape at the origin, as cached by isFullCube() before
+		$shape = (RuntimeBlockStateRegistry::getInstance()->getAllKnownStates()[$block->getStateId()] ?? $block)->getCollisionBoxes();
+		foreach ($shape as $box) {
+			if ($box->maxY > self::MAX_WALK_OVER_HEIGHT) {
+				return false;
+			}
+		}
+		return true;
 	}
 }

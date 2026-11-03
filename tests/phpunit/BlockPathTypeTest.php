@@ -35,6 +35,10 @@ final class BlockPathTypeTest extends TestCase{
 	 */
 	public static function rawTypes() : \Generator{
 		yield "air" => [VanillaBlocks::AIR(), BlockPathType::OPEN];
+		yield "carpet" => [VanillaBlocks::CARPET(), BlockPathType::OPEN];
+		yield "stairs" => [VanillaBlocks::OAK_STAIRS(), BlockPathType::OPEN];
+		yield "chest" => [VanillaBlocks::CHEST(), BlockPathType::BLOCKED];
+		yield "glass pane" => [VanillaBlocks::GLASS_PANE(), BlockPathType::BLOCKED];
 		yield "stone" => [VanillaBlocks::STONE(), BlockPathType::BLOCKED];
 		yield "slab" => [VanillaBlocks::SMOOTH_STONE_SLAB(), BlockPathType::BLOCKED];
 		yield "tall grass" => [VanillaBlocks::TALL_GRASS(), BlockPathType::OPEN];
