@@ -94,6 +94,14 @@ the search ended:
 
 `Path::canReach()` is shorthand for `getPathResult() === PathResult::REACHED`.
 
+### Following a path
+
+A `Path` never changes: it is what a search found. `PathCursor` is a path and how far
+along it the mob is. It advances (`advance()`, `isDone()`, `getNextNode()`) and answers
+what depends on the progress, like which changed blocks still matter. `withNodes()`
+makes the path through other nodes, e.g. adjusted to the mob, and `withPath()` keeps
+the progress on it.
+
 ### Following a moving target
 
 When the target moved a little, search from the remaining node closest to the new
@@ -102,36 +110,37 @@ the search at that node itself, not where a mob there would stand; a small node
 budget keeps a failed extension cheap.
 
 ```php
-$index = $path->getClosestNodeIndex($newTarget);
+$index = $cursor->getClosestNodeIndex($newTarget);
 $executor->search($evaluator, $profile, $terrain, new SearchRequest(
-	$path->getNode($index),
+	$cursor->getPath()->getNode($index),
 	$newTarget,
 	maxVisitedNodes: 500,
 	maxDistanceFromStart: 32,
 	startAtNode: true
-))->getPromise()->onCompletion(function(Path $continuation) use ($path, $index) : void{
+))->getPromise()->onCompletion(function(Path $continuation) use ($cursor, $index) : void{
 	if ($continuation->canReach()) {
-		$this->path = $path->splice($index, $continuation);
+		$this->cursor = $cursor->splice($index, $continuation);
 	}
 }, static function() : void{});
 ```
 
 A spliced path keeps the old route, so search from the mob again every few
-splices. `splice()` throws if the continuation does not start at that node or the
-node is behind the mob; `canSplice()` checks both.
+splices. `PathCursor::splice()` throws if the continuation does not start at that node
+or the node is behind the mob; `canSplice()` checks both.
 
 ### Repairing a path after a block change
 
-`Path::findInvalidation()` returns the nodes still to be walked that a changed block
+`PathCursor::findInvalidation()` returns the nodes still to be walked that a changed block
 matters to (`PathInvalidation::union()` merges several), and `planRepair()` the node to
 search from and the node to rejoin. Search between them with `reachRange: 0` and
 `splice()` the result in; the rest of the old path is kept. Without a rejoin node
 the invalidated nodes reach the end of the path, so search to the target.
 
 ```php
-$invalidation = $path->findInvalidation($x, $y, $z);
-$repair = $invalidation === null ? null : $path->planRepair($invalidation);
+$invalidation = $cursor->findInvalidation($x, $y, $z);
+$repair = $invalidation === null ? null : $cursor->planRepair($invalidation);
 if ($repair !== null) {
+	$path = $cursor->getPath();
 	$goal = $repair->rejoin === null ? $path->getTarget() : $path->getNode($repair->rejoin);
 	$executor->search($evaluator, $profile, $terrain, new SearchRequest(
 		$path->getNode($repair->from),
@@ -140,9 +149,9 @@ if ($repair !== null) {
 		maxDistanceFromStart: 24,
 		reachRange: $repair->rejoin === null ? $reach : 0,
 		startAtNode: true
-	))->getPromise()->onCompletion(function(Path $bridge) use ($path, $repair) : void{
+	))->getPromise()->onCompletion(function(Path $bridge) use ($cursor, $repair) : void{
 		if ($bridge->canReach()) {
-			$this->path = $path->splice($repair->from, $bridge, $repair->rejoin);
+			$this->cursor = $cursor->splice($repair->from, $bridge, $repair->rejoin);
 		}
 	}, static function() : void{});
 }
@@ -304,7 +313,7 @@ final class SimpleFlyingEvaluator extends NodeEvaluator {
 
 ## 🧭 Navigation
 
-A minimal navigator that moves an entity along a `Path`: it computes the path
+A minimal navigator that moves an entity along a path: it computes the path
 asynchronously, advances waypoint by waypoint, and jumps when the next node is
 out of reach. See
 [`PathNavigation`](https://github.com/IvanCraft623/MobPlugin/blob/main/src/IvanCraft623/MobPlugin/entity/ai/navigation/PathNavigation.php)
@@ -316,6 +325,7 @@ cutting, path trimming, timeouts).
 ```php
 use IvanCraft623\Pathfinder\MovementProfile;
 use IvanCraft623\Pathfinder\Path;
+use IvanCraft623\Pathfinder\PathCursor;
 use IvanCraft623\Pathfinder\SearchRequest;
 use IvanCraft623\Pathfinder\evaluator\NodeEvaluator;
 use IvanCraft623\Pathfinder\execution\SearchExecutor;
@@ -326,7 +336,7 @@ use function sqrt;
 
 final class Navigator {
 
-	private ?Path $path = null;
+	private ?PathCursor $cursor = null;
 
 	public function __construct(
 		private Entity $entity,
@@ -349,28 +359,28 @@ final class Navigator {
 				onGround: $this->entity->isOnGround()
 			)
 		)->getPromise()->onCompletion(function(Path $path) : void{
-			$this->path = $path;
+			$this->cursor = new PathCursor($path);
 		}, static function() : void{});
 	}
 
 	public function tick() : void{
-		if ($this->path === null || $this->path->isDone()) {
+		if ($this->cursor === null || $this->cursor->isDone()) {
 			$this->entity->setMotion(Vector3::zero());
 
 			return;
 		}
 
 		$pos = $this->entity->getPosition();
-		$nodePos = $this->path->getNextNodePos();
+		$nodePos = $this->cursor->getNextNodePos();
 
 		// Advance once the entity is close enough to the waypoint
 		if ($pos->distanceSquared($nodePos->add(0.5, 0, 0.5)) < 1) {
-			$this->path->advance();
+			$this->cursor->advance();
 
-			if ($this->path->isDone()) {
+			if ($this->cursor->isDone()) {
 				return;
 			}
-			$nodePos = $this->path->getNextNodePos();
+			$nodePos = $this->cursor->getNextNodePos();
 		}
 
 		// Move towards the waypoint
@@ -390,11 +400,11 @@ final class Navigator {
 	}
 
 	public function isDone() : bool{
-		return $this->path === null || $this->path->isDone();
+		return $this->cursor === null || $this->cursor->isDone();
 	}
 
 	public function stop() : void{
-		$this->path = null;
+		$this->cursor = null;
 	}
 }
 ```

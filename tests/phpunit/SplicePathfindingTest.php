@@ -54,19 +54,17 @@ final class SplicePathfindingTest extends PathfindingTestCase{
 	private static function walkThenSplice(TestWorld $world, Vector3 $oldTarget, Vector3 $newTarget) : array{
 		[$path] = self::countedSearch($world, self::standingAt(2, 5), $oldTarget);
 		self::assertReached($path, $oldTarget);
-		for ($i = 0; $i < 4; ++$i) {
-			$path->advance();
-		}
+		$cursor = new PathCursor($path, 4);
 
-		$index = $path->getClosestNodeIndex($newTarget);
+		$index = $cursor->getClosestNodeIndex($newTarget);
 		[$continuation, $expanded] = self::countedSearch($world, $path->getNode($index), $newTarget, true);
-		$spliced = $path->splice($index, $continuation);
+		$spliced = $cursor->splice($index, $continuation);
 
 		self::assertSame(4, $spliced->getNextNodeIndex());
 		for ($i = 0; $i <= $index; ++$i) {
-			self::assertTrue($spliced->getNode($i)->equals($path->getNode($i)), "keeps node $i");
+			self::assertTrue($spliced->getPath()->getNode($i)->equals($path->getNode($i)), "keeps node $i");
 		}
-		return [$spliced, $index, $expanded];
+		return [$spliced->getPath(), $index, $expanded];
 	}
 
 	public function testFollowingATargetThatMovedABlock() : void{

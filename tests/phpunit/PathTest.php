@@ -25,6 +25,7 @@ namespace IvanCraft623\Pathfinder;
 use PHPUnit\Framework\TestCase;
 use pocketmine\math\Vector3;
 use pocketmine\world\World;
+use function array_slice;
 use function count;
 use const INF;
 
@@ -43,24 +44,24 @@ final class PathTest extends TestCase{
 	}
 
 	public function testWalking() : void{
-		$path = self::path([[0, 64, 0], [1, 64, 0], [2, 64, 0]]);
-		self::assertTrue($path->notStarted());
-		self::assertTrue($path->canReach());
-		self::assertSame(0.0, $path->getDistanceToTarget());
+		$cursor = new PathCursor(self::path([[0, 64, 0], [1, 64, 0], [2, 64, 0]]));
+		self::assertTrue($cursor->notStarted());
+		self::assertTrue($cursor->getPath()->canReach());
+		self::assertSame(0.0, $cursor->getPath()->getDistanceToTarget());
 
-		$path->advance();
-		self::assertFalse($path->notStarted());
-		self::assertSame(1, $path->getNextNode()->x());
-		self::assertSame(0, $path->getPreviousNode()?->x());
+		$cursor->advance();
+		self::assertFalse($cursor->notStarted());
+		self::assertSame(1, $cursor->getNextNode()->x());
+		self::assertSame(0, $cursor->getPreviousNode()?->x());
 
-		$path->advance();
-		$path->advance();
-		self::assertTrue($path->isDone());
+		$cursor->advance();
+		$cursor->advance();
+		self::assertTrue($cursor->isDone());
 	}
 
 	public function testEmptyPath() : void{
 		$path = new Path([], new Vector3(5, 64, 5), PathResult::CANCELLED);
-		self::assertTrue($path->isDone());
+		self::assertTrue((new PathCursor($path))->isDone());
 		self::assertNull($path->getEndNode());
 		self::assertSame(INF, $path->getDistanceToTarget());
 		self::assertFalse($path->canReach());
@@ -87,23 +88,25 @@ final class PathTest extends TestCase{
 	}
 
 	public function testCorridorForgetsWalkedNodes() : void{
-		$path = self::path([[0, 64, 0], [5, 64, 0], [10, 64, 0]]);
-		$path->advance();
-		self::assertTrue($path->isInCorridor(0, 64, 0), "the node being left still counts");
-		$path->advance();
-		self::assertFalse($path->isInCorridor(0, 64, 0));
-		self::assertTrue($path->isInCorridor(5, 64, 0));
+		$cursor = new PathCursor(self::path([[0, 64, 0], [5, 64, 0], [10, 64, 0]]));
+		$cursor->advance();
+		self::assertTrue($cursor->isInCorridor(0, 64, 0), "the node being left still counts");
+		$cursor->advance();
+		self::assertFalse($cursor->isInCorridor(0, 64, 0));
+		self::assertTrue($cursor->isInCorridor(5, 64, 0));
 	}
 
 	public function testCorridorFollowsNodeChanges() : void{
 		$path = self::path([[0, 64, 0], [5, 64, 0], [10, 64, 0]]);
-		$path->truncateNodes(2);
-		self::assertFalse($path->isInCorridor(10, 64, 0));
+		$truncated = $path->withNodes(array_slice($path->getNodes(), 0, 2));
+		self::assertFalse($truncated->isInCorridor(10, 64, 0));
+		self::assertTrue($path->isInCorridor(10, 64, 0), "leaves the path alone");
 
-		$path->replaceNode(1, new Node(5, 70, 0));
-		self::assertTrue($path->isInCorridor(5, 70, 0));
-		self::assertTrue($path->isInCorridor(5, 63, 0), "joined to the previous node's height");
-		self::assertFalse($path->isInCorridor(5, 62, 0));
+		$moved = $truncated->withNodes([$truncated->getNode(0), new Node(5, 70, 0)]);
+		self::assertTrue($moved->isInCorridor(5, 70, 0));
+		self::assertTrue($moved->isInCorridor(5, 63, 0), "joined to the previous node's height");
+		self::assertFalse($moved->isInCorridor(5, 62, 0));
+		self::assertTrue($moved->getTarget()->equals($path->getTarget()), "keeps the target");
 	}
 
 	public function testCorridorChunksIncludeTheRingAcrossChunkBorders() : void{
@@ -118,41 +121,41 @@ final class PathTest extends TestCase{
 	}
 
 	public function testNodeCenter() : void{
-		$path = self::path([[3, 64, -5], [4, 64, -5]], 1);
-		self::assertTrue($path->getNodeCenter(0)->equals(new Vector3(3.5, 64, -4.5)));
-		self::assertTrue($path->getNextNodeCenter()->equals(new Vector3(3.5, 64, -4.5)));
-		$path->advance();
-		self::assertTrue($path->getNextNodeCenter()->equals(new Vector3(4.5, 64, -4.5)));
+		$cursor = new PathCursor(self::path([[3, 64, -5], [4, 64, -5]], 1));
+		self::assertTrue($cursor->getPath()->getNodeCenter(0)->equals(new Vector3(3.5, 64, -4.5)));
+		self::assertTrue($cursor->getNextNodeCenter()->equals(new Vector3(3.5, 64, -4.5)));
+		$cursor->advance();
+		self::assertTrue($cursor->getNextNodeCenter()->equals(new Vector3(4.5, 64, -4.5)));
 
 		$wide = self::path([[3, 64, -5]], 2);
 		self::assertTrue($wide->getNodeCenter(0)->equals(new Vector3(4, 64, -4)), "a 2x2 node's center is its corner block's far corner");
 	}
 
 	public function testClosestNodeIsAhead() : void{
-		$path = self::path([[0, 64, 0], [1, 64, 0], [2, 64, 0], [3, 64, 0]]);
-		self::assertSame(2, $path->getClosestNodeIndex(new Vector3(2, 64, 3)));
+		$cursor = new PathCursor(self::path([[0, 64, 0], [1, 64, 0], [2, 64, 0], [3, 64, 0]]));
+		self::assertSame(2, $cursor->getClosestNodeIndex(new Vector3(2, 64, 3)));
 
-		$path->advance();
-		$path->advance();
-		$path->advance();
-		self::assertSame(3, $path->getClosestNodeIndex(new Vector3(0, 64, 0)), "walked nodes don't count");
+		$cursor->advance();
+		$cursor->advance();
+		$cursor->advance();
+		self::assertSame(3, $cursor->getClosestNodeIndex(new Vector3(0, 64, 0)), "walked nodes don't count");
 
-		$path->advance();
+		$cursor->advance();
 		$this->expectException(\LogicException::class);
-		$path->getClosestNodeIndex(new Vector3(0, 64, 0));
+		$cursor->getClosestNodeIndex(new Vector3(0, 64, 0));
 	}
 
 	public function testSplice() : void{
 		$path = self::path([[0, 64, 0], [1, 64, 0], [2, 64, 0], [3, 64, 0]]);
-		$path->advance();
+		$cursor = new PathCursor($path, 1);
 		$continuation = new Path([new Node(2, 64, 0), new Node(2, 64, 1), new Node(2, 64, 2)], new Vector3(2, 64, 2), PathResult::REACHED);
 
-		$spliced = $path->splice(2, $continuation);
-		self::assertNotSame($path, $spliced);
-		self::assertTrue($spliced->equals(self::path([[0, 64, 0], [1, 64, 0], [2, 64, 0], [2, 64, 1], [2, 64, 2]])));
+		$spliced = $cursor->splice(2, $continuation);
+		self::assertNotSame($cursor, $spliced);
+		self::assertTrue($spliced->getPath()->equals(self::path([[0, 64, 0], [1, 64, 0], [2, 64, 0], [2, 64, 1], [2, 64, 2]])));
 		self::assertSame(1, $spliced->getNextNodeIndex(), "keeps the progress");
-		self::assertTrue($spliced->getTarget()->equals(new Vector3(2, 64, 2)));
-		self::assertSame(PathResult::REACHED, $spliced->getPathResult());
+		self::assertTrue($spliced->getPath()->getTarget()->equals(new Vector3(2, 64, 2)));
+		self::assertSame(PathResult::REACHED, $spliced->getPath()->getPathResult());
 		self::assertSame(4, $path->getNodeCount(), "leaves the spliced path alone");
 	}
 
@@ -172,25 +175,21 @@ final class PathTest extends TestCase{
 	}
 
 	public function testSpliceCantDropWalkedNodes() : void{
-		$path = self::path([[0, 64, 0], [1, 64, 0], [2, 64, 0], [3, 64, 0]]);
-		$path->advance();
-		$path->advance();
-		$path->advance();
-		$path->splice(2, new Path([new Node(2, 64, 0)], new Vector3(2, 64, 0), PathResult::REACHED)); //the node being left is fine
+		$cursor = new PathCursor(self::path([[0, 64, 0], [1, 64, 0], [2, 64, 0], [3, 64, 0]]), 3);
+		$cursor->splice(2, new Path([new Node(2, 64, 0)], new Vector3(2, 64, 0), PathResult::REACHED)); //the node being left is fine
 
 		$this->expectException(\InvalidArgumentException::class);
-		$path->splice(1, new Path([new Node(1, 64, 0)], new Vector3(1, 64, 0), PathResult::REACHED));
+		$cursor->splice(1, new Path([new Node(1, 64, 0)], new Vector3(1, 64, 0), PathResult::REACHED));
 	}
 
 	public function testSpliceRejoinsTheRestOfThePath() : void{
-		$path = self::path([[0, 64, 0], [1, 64, 0], [2, 64, 0], [3, 64, 0], [4, 64, 0], [5, 64, 0]]);
-		$path->advance();
+		$cursor = new PathCursor(self::path([[0, 64, 0], [1, 64, 0], [2, 64, 0], [3, 64, 0], [4, 64, 0], [5, 64, 0]]), 1);
 		$detour = new Path([new Node(1, 64, 0), new Node(2, 64, 1), new Node(3, 64, 1), new Node(4, 64, 0)], new Vector3(4, 64, 0), PathResult::REACHED);
 
-		$spliced = $path->splice(1, $detour, 4);
-		self::assertTrue($spliced->equals(self::path([[0, 64, 0], [1, 64, 0], [2, 64, 1], [3, 64, 1], [4, 64, 0], [5, 64, 0]])));
+		$spliced = $cursor->splice(1, $detour, 4);
+		self::assertTrue($spliced->getPath()->equals(self::path([[0, 64, 0], [1, 64, 0], [2, 64, 1], [3, 64, 1], [4, 64, 0], [5, 64, 0]])));
 		self::assertSame(1, $spliced->getNextNodeIndex());
-		self::assertTrue($spliced->getTarget()->equals(new Vector3(5, 64, 0)), "keeps the target");
+		self::assertTrue($spliced->getPath()->getTarget()->equals(new Vector3(5, 64, 0)), "keeps the target");
 	}
 
 	public function testSpliceRejoinCanShortcutTheNodesBetween() : void{
@@ -201,16 +200,14 @@ final class PathTest extends TestCase{
 	}
 
 	public function testCanSpliceAgreesWithSplice() : void{
-		$path = self::path([[0, 64, 0], [1, 64, 0], [2, 64, 0]]);
-		$path->advance();
-		$path->advance();
+		$cursor = new PathCursor(self::path([[0, 64, 0], [1, 64, 0], [2, 64, 0]]), 2);
 		$detour = new Path([new Node(1, 64, 0), new Node(2, 64, 0)], new Vector3(2, 64, 0), PathResult::REACHED);
 
-		self::assertTrue($path->canSplice(1, $detour, 2));
-		self::assertFalse($path->canSplice(1, $detour, 1), "rejoin is not after the splice");
-		self::assertFalse($path->canSplice(0, $detour), "behind the mob");
-		self::assertFalse($path->canSplice(2, $detour), "starts elsewhere");
-		self::assertFalse($path->canSplice(1, new Path([], new Vector3(0, 0, 0), PathResult::BLOCKED)));
+		self::assertTrue($cursor->canSplice(1, $detour, 2));
+		self::assertFalse($cursor->canSplice(1, $detour, 1), "rejoin is not after the splice");
+		self::assertFalse($cursor->canSplice(0, $detour), "behind the mob");
+		self::assertFalse($cursor->canSplice(2, $detour), "starts elsewhere");
+		self::assertFalse($cursor->canSplice(1, new Path([], new Vector3(0, 0, 0), PathResult::BLOCKED)));
 	}
 
 	public function testInvalidationIsTheNodesAColumnServes() : void{
@@ -225,29 +222,27 @@ final class PathTest extends TestCase{
 	}
 
 	public function testInvalidationForgetsWalkedNodes() : void{
-		$path = self::path([[0, 64, 0], [1, 64, 0], [2, 64, 0], [3, 64, 0], [4, 64, 0]]);
-		$path->setNextNodeIndex(3);
+		$cursor = new PathCursor(self::path([[0, 64, 0], [1, 64, 0], [2, 64, 0], [3, 64, 0], [4, 64, 0]]), 3);
 
-		self::assertNull($path->findInvalidation(0, 64, 0));
-		self::assertNotNull($path->findInvalidation(2, 64, 0), "the node being left is still there");
+		self::assertNull($cursor->findInvalidation(0, 64, 0));
+		self::assertNotNull($cursor->findInvalidation(2, 64, 0), "the node being left is still there");
 	}
 
 	public function testRepairBetweenTheNodesAroundTheInvalidation() : void{
-		$path = self::path([[0, 64, 0], [1, 64, 0], [2, 64, 0], [3, 64, 0], [4, 64, 0], [5, 64, 0]]);
-		$path->advance();
+		$cursor = new PathCursor(self::path([[0, 64, 0], [1, 64, 0], [2, 64, 0], [3, 64, 0], [4, 64, 0], [5, 64, 0]]), 1);
 
-		$repair = $path->planRepair(new PathInvalidation(3, 4));
+		$repair = $cursor->planRepair(new PathInvalidation(3, 4));
 		self::assertSame([2, 5], [$repair?->from, $repair?->rejoin]);
 	}
 
 	public function testNoRepairWhenTheMobMayBeStandingOnTheInvalidation() : void{
 		$path = self::path([[0, 64, 0], [1, 64, 0], [2, 64, 0], [3, 64, 0], [4, 64, 0]]);
-		self::assertNull($path->planRepair(new PathInvalidation(0, 1)), "the start");
+		self::assertNull((new PathCursor($path))->planRepair(new PathInvalidation(0, 1)), "the start");
 
-		$path->setNextNodeIndex(3);
-		self::assertNull($path->planRepair(new PathInvalidation(2, 3)), "the node just left");
-		self::assertNull($path->planRepair(new PathInvalidation(1, 2)), "behind the mob");
-		self::assertSame(2, $path->planRepair(new PathInvalidation(3, 3))?->from, "the node being walked to"); //3 is next
+		$cursor = new PathCursor($path, 3);
+		self::assertNull($cursor->planRepair(new PathInvalidation(2, 3)), "the node just left");
+		self::assertNull($cursor->planRepair(new PathInvalidation(1, 2)), "behind the mob");
+		self::assertSame(2, $cursor->planRepair(new PathInvalidation(3, 3))?->from, "the node being walked to"); //3 is next
 	}
 
 	public function testEquals() : void{

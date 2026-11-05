@@ -52,16 +52,19 @@ final class PathRepairTest extends PathfindingTestCase{
 	 *
 	 * @return array{Path, PathRepair, int} the repaired path, the repair and how many nodes the repair expanded
 	 */
-	private static function repair(Path $path, TestWorld $changed, int $x, int $y, int $z, ?PathInvalidation $known = null) : array{
-		$invalidation = $path->findInvalidation($x, $y, $z);
+	private static function repair(Path $path, TestWorld $changed, int $x, int $y, int $z, ?PathInvalidation $known = null, int $walked = 0) : array{
+		$cursor = new PathCursor($path, $walked);
+		$invalidation = $cursor->findInvalidation($x, $y, $z);
 		self::assertNotNull($invalidation, "the change is on the path");
-		$repair = $path->planRepair($known?->union($invalidation) ?? $invalidation);
+		$repair = $cursor->planRepair($known?->union($invalidation) ?? $invalidation);
 		self::assertNotNull($repair);
 
 		$target = $repair->rejoin === null ? $path->getTarget() : $path->getNode($repair->rejoin);
 		[$bridge, $expanded] = self::countedSearch($changed, $path->getNode($repair->from), $target, 0, true);
 		self::assertSame(PathResult::REACHED, $bridge->getPathResult());
-		return [$path->splice($repair->from, $bridge, $repair->rejoin), $repair, $expanded];
+		$repaired = $cursor->splice($repair->from, $bridge, $repair->rejoin);
+		self::assertSame($walked, $repaired->getNextNodeIndex(), "keeps the progress");
+		return [$repaired->getPath(), $repair, $expanded];
 	}
 
 	public function testDetourAroundABlockedStretch() : void{
@@ -70,17 +73,13 @@ final class PathRepairTest extends PathfindingTestCase{
 		$target = self::standingAt(60, 5);
 		[$path] = self::countedSearch($world, $start, $target);
 		self::assertReached($path, $target);
-		for ($i = 0; $i < 3; ++$i) {
-			$path->advance();
-		}
 
 		$changed = $world->fill(15, self::Y, 3, 15, self::Y + 1, 7, VanillaBlocks::STONE());
-		[$repaired, $repair, $expanded] = self::repair($path, $changed, 15, self::Y, 5);
+		[$repaired, $repair, $expanded] = self::repair($path, $changed, 15, self::Y, 5, walked: 3);
 
 		self::assertNotNull($repair->rejoin, "rejoins the old path");
 		self::assertReached($repaired, $target);
 		self::assertContiguous($repaired);
-		self::assertSame(3, $repaired->getNextNodeIndex());
 		self::assertFalse(self::pathHas($repaired, 15, self::Y, 5));
 		self::assertTrue($repaired->getNode($repaired->getNodeCount() - 2)->equals($path->getNode($path->getNodeCount() - 2)), "keeps the tail");
 

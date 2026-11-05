@@ -27,13 +27,15 @@ use pocketmine\world\format\Chunk;
 use pocketmine\world\World;
 use function array_merge;
 use function array_slice;
-use function array_splice;
 use function count;
 use function max;
 use function min;
 use const INF;
 
-class Path{
+/**
+ * The nodes a search found from the start to the target. It never changes: to follow it, see {@link PathCursor}.
+ */
+final class Path{
 
 	//A corridor column packs, from the lowest bits: min y, max y, last node index, first node index
 	private const CORRIDOR_Y_BITS = 12;
@@ -50,8 +52,6 @@ class Path{
 
 	private int $nodeCount;
 
-	private int $nextNodeIndex = 0;
-
 	private Vector3 $target;
 
 	private float $distToTarget;
@@ -63,12 +63,12 @@ class Path{
 	private int $nodeHeight;
 
 	/**
-	 * Blocks the search looked at for the nodes, per column. Null once the nodes changed, until needed again.
+	 * Blocks the search looked at for the nodes, per column.
 	 *
-	 * @var int[]|null World::chunkHash() of the column => min y, max y and indexes of the last and first node using it, packed
-	 * @phpstan-var array<int, int>|null
+	 * @var int[] World::chunkHash() of the column => min y, max y and indexes of the last and first node using it, packed
+	 * @phpstan-var array<int, int>
 	 */
-	private ?array $corridor = null;
+	private array $corridor = [];
 
 	/**
 	 * @var true[] World::chunkHash() of the chunk => true
@@ -147,16 +147,16 @@ class Path{
 	 * Whether the block is one the search looked at for a node still to be walked: the blocks the entity
 	 * occupies there, the floor, the ring around them, and the column joining it to the previous node.
 	 */
-	public function isInCorridor(int $x, int $y, int $z) : bool{
-		return $this->getCorridorColumn($x, $y, $z) !== null;
+	public function isInCorridor(int $x, int $y, int $z, int $nextNodeIndex = 0) : bool{
+		return $this->getCorridorColumn($x, $y, $z, $nextNodeIndex) !== null;
 	}
 
 	/**
 	 * The nodes still to be walked that the block at x, y, z matters to, see {@link isInCorridor()}. A column the
 	 * path crosses twice reports both crossings and everything between, so the invalidation may be wider than it is.
 	 */
-	public function findInvalidation(int $x, int $y, int $z) : ?PathInvalidation{
-		$column = $this->getCorridorColumn($x, $y, $z);
+	public function findInvalidation(int $x, int $y, int $z, int $nextNodeIndex = 0) : ?PathInvalidation{
+		$column = $this->getCorridorColumn($x, $y, $z, $nextNodeIndex);
 
 		return $column === null ? null : new PathInvalidation(
 			($column >> self::CORRIDOR_FIRST_SHIFT) & self::CORRIDOR_INDEX_MASK,
@@ -164,16 +164,13 @@ class Path{
 		);
 	}
 
-	private function getCorridorColumn(int $x, int $y, int $z) : ?int{
-		if ($this->corridor === null) {
-			$this->buildCorridor();
-		}
+	private function getCorridorColumn(int $x, int $y, int $z, int $nextNodeIndex) : ?int{
 		$column = $this->corridor[World::chunkHash($x, $z)] ?? null;
 
 		if ($column === null ||
 			$y < ($column & self::CORRIDOR_Y_MASK) - self::CORRIDOR_Y_OFFSET ||
 			$y > (($column >> self::CORRIDOR_MAX_Y_SHIFT) & self::CORRIDOR_Y_MASK) - self::CORRIDOR_Y_OFFSET ||
-			(($column >> self::CORRIDOR_LAST_SHIFT) & self::CORRIDOR_INDEX_MASK) < $this->nextNodeIndex - 1
+			(($column >> self::CORRIDOR_LAST_SHIFT) & self::CORRIDOR_INDEX_MASK) < $nextNodeIndex - 1
 		) {
 			return null;
 		}
@@ -185,9 +182,9 @@ class Path{
 	 * How to patch the path around the invalidation, or null if it reaches the node the mob just left (it may be
 	 * standing on it) and the path has to be searched again from the mob.
 	 */
-	public function planRepair(PathInvalidation $invalidation) : ?PathRepair{
+	public function planRepair(PathInvalidation $invalidation, int $nextNodeIndex = 0) : ?PathRepair{
 		$from = $invalidation->first - 1;
-		if ($from < 0 || $from < $this->nextNodeIndex - 1 || $invalidation->last >= $this->nodeCount) {
+		if ($from < 0 || $from < $nextNodeIndex - 1 || $invalidation->last >= $this->nodeCount) {
 			return null;
 		}
 		$rejoin = $invalidation->last + 1;
@@ -202,23 +199,7 @@ class Path{
 	 * @phpstan-return array<int, true>
 	 */
 	public function getCorridorChunks() : array{
-		if ($this->corridor === null) {
-			$this->buildCorridor();
-		}
-
 		return $this->corridorChunks;
-	}
-
-	public function advance() : void{
-		++$this->nextNodeIndex;
-	}
-
-	public function notStarted() : bool{
-		return $this->nextNodeIndex <= 0;
-	}
-
-	public function isDone() : bool{
-		return $this->nextNodeIndex >= $this->nodeCount;
 	}
 
 	public function getEndNode() : ?Node{
@@ -229,17 +210,13 @@ class Path{
 		return $this->nodes[$index];
 	}
 
-	public function truncateNodes(int $length) : void{
-		if($this->nodeCount > $length){
-			array_splice($this->nodes, $length);
-			$this->nodeCount = $length;
-			$this->corridor = null;
-		}
-	}
-
-	public function replaceNode(int $index, Node $node) : void{
-		$this->nodes[$index] = $node;
-		$this->corridor = null;
+	/**
+	 * This path through other nodes, to the same target.
+	 *
+	 * @param Node[] $nodes
+	 */
+	public function withNodes(array $nodes) : self{
+		return new self($nodes, $this->target, $this->result, $this->nodeWidth, $this->nodeHeight);
 	}
 
 	/**
@@ -251,14 +228,6 @@ class Path{
 
 	public function getNodeCount() : int{
 		return $this->nodeCount;
-	}
-
-	public function getNextNodeIndex() : int{
-		return $this->nextNodeIndex;
-	}
-
-	public function setNextNodeIndex(int $index) : void{
-		$this->nextNodeIndex = $index;
 	}
 
 	/**
@@ -274,35 +243,19 @@ class Path{
 		return $this->nodes[$index]->asVector3();
 	}
 
-	public function getNextNodeCenter() : Vector3{
-		return $this->getNodeCenter($this->nextNodeIndex);
-	}
-
-	public function getNextNode() : Node{
-		return $this->nodes[$this->nextNodeIndex];
-	}
-
-	public function getNextNodePos() : Vector3{
-		return $this->getNextNode()->asVector3();
-	}
-
-	public function getPreviousNode() : ?Node{
-		return $this->nodes[$this->nextNodeIndex - 1] ?? null;
-	}
-
 	/**
-	 * Index of the node still to walk closest to $position.
+	 * Index of the node closest to $position, from $nextNodeIndex on.
 	 *
-	 * @throws \LogicException if the path is done
+	 * @throws \LogicException if there is no node from there on
 	 */
-	public function getClosestNodeIndex(Vector3 $position) : int{
-		if ($this->isDone()) {
+	public function getClosestNodeIndex(Vector3 $position, int $nextNodeIndex = 0) : int{
+		if ($nextNodeIndex >= $this->nodeCount) {
 			throw new \LogicException("There is no node left to walk");
 		}
 
-		$closestIndex = $this->nextNodeIndex;
+		$closestIndex = $nextNodeIndex;
 		$closestDistance = INF;
-		for ($index = $this->nextNodeIndex; $index < $this->nodeCount; ++$index) {
+		for ($index = $nextNodeIndex; $index < $this->nodeCount; ++$index) {
 			$distance = $this->nodes[$index]->distanceSquared($position);
 			if ($distance < $closestDistance) {
 				$closestIndex = $index;
@@ -313,8 +266,7 @@ class Path{
 	}
 
 	/**
-	 * This path up to the node at $index, then $continuation, which starts at that node. The progress made along
-	 * this path is kept, so $index can't be behind the node last walked.
+	 * This path up to the node at $index, then $continuation, which starts at that node.
 	 *
 	 * With $rejoinIndex the continuation also ends at that node and the rest of this path is kept after it,
 	 * with its target and result: a detour around the nodes in between.
@@ -338,9 +290,7 @@ class Path{
 			$tail = array_merge(array_slice($continuation->nodes, 1, $continuation->nodeCount - 2), array_slice($this->nodes, $rejoinIndex));
 		}
 
-		$spliced = new Path(array_merge($nodes, $tail), $target, $result, $this->nodeWidth, $this->nodeHeight);
-		$spliced->nextNodeIndex = $this->nextNodeIndex;
-		return $spliced;
+		return new Path(array_merge($nodes, $tail), $target, $result, $this->nodeWidth, $this->nodeHeight);
 	}
 
 	/**
@@ -352,8 +302,8 @@ class Path{
 	}
 
 	private function getSpliceError(int $index, Path $continuation, ?int $rejoinIndex) : ?string{
-		if ($index < $this->nextNodeIndex - 1 || $index >= $this->nodeCount) {
-			return "Can't splice at node $index of $this->nodeCount, node $this->nextNodeIndex is next";
+		if ($index < 0 || $index >= $this->nodeCount) {
+			return "Can't splice at node $index of $this->nodeCount";
 		}
 		if ($continuation->nodeCount === 0 || !$continuation->nodes[0]->equals($this->nodes[$index])) {
 			return "The continuation does not start at node $index";
