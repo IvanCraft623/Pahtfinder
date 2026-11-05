@@ -73,7 +73,7 @@ class FlightNodeEvaluator extends NodeEvaluator {
 	}
 
 	protected function canStartAt(Vector3 $pos) : bool{
-		$pathType = $this->pathTypeResolver->getBlockPathType($this->context->blockGetter, (int) $pos->x, (int) $pos->y, (int) $pos->z, $this->context->start);
+		$pathType = $this->pathTypeResolver->getBlockPathTypeFrom($this->context->blockGetter, (int) $pos->x, (int) $pos->y, (int) $pos->z, $this->context->start);
 		return $this->getPathfindingMalus($pathType) >= 0;
 	}
 

@@ -220,9 +220,10 @@ evaluator comes with the resolver of its way of moving (`WalkPathTypeResolver`,
 `FlightPathTypeResolver`, `AmphibiousPathTypeResolver`) and takes another one in
 its constructor.
 
-- `getBlockPathType(BlockGetter, x, y, z, Vector3 $mobPosition)` — the type of one block.
-- `getPathType(BlockGetter, MovementProfile, x, y, z, Vector3 $mobPosition)` — the type of
-  all the blocks a mob of that profile takes, applying its door flags and costs.
+- `getBlockPathType(BlockGetter, x, y, z)` — the type of one block.
+- `getPathType(BlockGetter, MovementProfile, x, y, z, Vector3 $start)` — the type of
+  all the blocks a mob of that profile takes, applying its door flags and costs, and what
+  the search start changes (a rail is only passable from a rail).
 
 `BlockClassifier` holds what does not depend on the way of moving: a block's own
 type, its type for a mob on land (`getType()`), dangers around it and floor levels.

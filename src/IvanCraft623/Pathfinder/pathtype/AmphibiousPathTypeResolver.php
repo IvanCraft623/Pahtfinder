@@ -25,12 +25,11 @@ namespace IvanCraft623\Pathfinder\pathtype;
 use IvanCraft623\Pathfinder\BlockPathType;
 use IvanCraft623\Pathfinder\world\BlockGetter;
 use pocketmine\math\Facing;
-use pocketmine\math\Vector3;
 
 class AmphibiousPathTypeResolver extends WalkPathTypeResolver{
-	public function getBlockPathType(BlockGetter $blockGetter, int $x, int $y, int $z, Vector3 $mobPosition) : BlockPathType{
+	public function getBlockPathType(BlockGetter $blockGetter, int $x, int $y, int $z) : BlockPathType{
 		if (BlockClassifier::getRawType($blockGetter, $x, $y, $z) !== BlockPathType::WATER) {
-			return parent::getBlockPathType($blockGetter, $x, $y, $z, $mobPosition);
+			return parent::getBlockPathType($blockGetter, $x, $y, $z);
 		}
 
 		foreach (Facing::OFFSET as [$dx, $dy, $dz]) {

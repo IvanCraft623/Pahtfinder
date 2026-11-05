@@ -105,7 +105,7 @@ final class PathTypeResolverTest extends TestCase{
 			->fill(-1, 61, -1, 1, 63, 1, VanillaBlocks::WATER());
 		$resolver = new AmphibiousPathTypeResolver();
 
-		self::assertSame(BlockPathType::WATER_BORDER, $resolver->getBlockPathType($world->getBlockGetter(), 0, 61, 0, self::far()), "above the floor");
-		self::assertSame(BlockPathType::WATER, $resolver->getBlockPathType($world->getBlockGetter(), 0, 62, 0, self::far()));
+		self::assertSame(BlockPathType::WATER_BORDER, $resolver->getBlockPathType($world->getBlockGetter(), 0, 61, 0), "above the floor");
+		self::assertSame(BlockPathType::WATER, $resolver->getBlockPathType($world->getBlockGetter(), 0, 62, 0));
 	}
 }

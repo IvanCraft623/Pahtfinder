@@ -24,10 +24,9 @@ namespace IvanCraft623\Pathfinder\pathtype;
 
 use IvanCraft623\Pathfinder\BlockPathType;
 use IvanCraft623\Pathfinder\world\BlockGetter;
-use pocketmine\math\Vector3;
 
 class WalkPathTypeResolver extends PathTypeResolver{
-	public function getBlockPathType(BlockGetter $blockGetter, int $x, int $y, int $z, Vector3 $mobPosition) : BlockPathType{
+	public function getBlockPathType(BlockGetter $blockGetter, int $x, int $y, int $z) : BlockPathType{
 		return BlockClassifier::getType($blockGetter, $x, $y, $z);
 	}
 }

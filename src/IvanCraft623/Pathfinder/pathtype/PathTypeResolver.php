@@ -33,15 +33,22 @@ use pocketmine\math\Vector3;
  */
 abstract class PathTypeResolver{
 	/**
-	 * Type of one block for a mob at $mobPosition.
+	 * Type of one block.
 	 */
-	abstract public function getBlockPathType(BlockGetter $blockGetter, int $x, int $y, int $z, Vector3 $mobPosition) : BlockPathType;
+	abstract public function getBlockPathType(BlockGetter $blockGetter, int $x, int $y, int $z) : BlockPathType;
 
 	/**
-	 * Type of the blocks a mob of $profile takes with its lowest corner at x, y, z, the mob being at $mobPosition.
+	 * Type of one block for a search starting at $start, see {@link applyStart()}.
 	 */
-	public function getPathType(BlockGetter $blockGetter, MovementProfile $profile, int $x, int $y, int $z, Vector3 $mobPosition) : BlockPathType{
-		$mobBlock = $mobPosition->floor();
+	public function getBlockPathTypeFrom(BlockGetter $blockGetter, int $x, int $y, int $z, Vector3 $start) : BlockPathType{
+		return $this->applyStart($blockGetter, $start->floor(), $x, $y, $z, $this->getBlockPathType($blockGetter, $x, $y, $z));
+	}
+
+	/**
+	 * Type of the blocks a mob of $profile takes with its lowest corner at x, y, z, the search starting at $start.
+	 */
+	public function getPathType(BlockGetter $blockGetter, MovementProfile $profile, int $x, int $y, int $z, Vector3 $start) : BlockPathType{
+		$startBlock = $start->floor();
 
 		/** @var true[] $pathTypes BlockPathType name => true */
 		$pathTypes = [];
@@ -49,9 +56,13 @@ abstract class PathTypeResolver{
 		for ($currentX = 0; $currentX < $profile->nodeWidth; ++$currentX) {
 			for ($currentY = 0; $currentY < $profile->nodeHeight; ++$currentY) {
 				for ($currentZ = 0; $currentZ < $profile->nodeWidth; ++$currentZ) {
-					$pathType = $this->applyProfile($blockGetter, $profile, $mobBlock,
-						$this->getBlockPathType($blockGetter, $x + $currentX, $y + $currentY, $z + $currentZ, $mobBlock)
-					);
+					$cellX = $x + $currentX;
+					$cellY = $y + $currentY;
+					$cellZ = $z + $currentZ;
+					$pathType = $this->applyProfile($profile, $this->applyStart(
+						$blockGetter, $startBlock, $cellX, $cellY, $cellZ,
+						$this->getBlockPathType($blockGetter, $cellX, $cellY, $cellZ)
+					));
 					if ($currentX === 0 && $currentY === 0 && $currentZ === 0) {
 						$cornerPathType = $pathType;
 					}
@@ -102,18 +113,25 @@ abstract class PathTypeResolver{
 		return $profile->nodeWidth <= 1;
 	}
 
-	private function applyProfile(BlockGetter $blockGetter, MovementProfile $profile, Vector3 $mobBlock, BlockPathType $pathType) : BlockPathType{
+	/**
+	 * What the search start changes about the type of the block at x, y, z: a rail is only passable from a rail.
+	 */
+	protected function applyStart(BlockGetter $blockGetter, Vector3 $startBlock, int $x, int $y, int $z, BlockPathType $pathType) : BlockPathType{
+		if ($pathType === BlockPathType::RAIL &&
+			!($blockGetter->getBlock($startBlock) instanceof BaseRail) &&
+			!($blockGetter->getBlock($startBlock->down()) instanceof BaseRail)
+		) {
+			return BlockPathType::UNPASSABLE_RAIL;
+		}
+		return $pathType;
+	}
+
+	private function applyProfile(MovementProfile $profile, BlockPathType $pathType) : BlockPathType{
 		if ($pathType === BlockPathType::DOOR_WOOD_CLOSED && $profile->canOpenDoors && $profile->canPassDoors) {
 			return BlockPathType::WALKABLE_DOOR;
 		}
 		if ($pathType === BlockPathType::DOOR_OPEN && !$profile->canPassDoors) {
 			return BlockPathType::BLOCKED;
-		}
-		if ($pathType === BlockPathType::RAIL &&
-			!($blockGetter->getBlock($mobBlock) instanceof BaseRail) &&
-			!($blockGetter->getBlock($mobBlock->down()) instanceof BaseRail)
-		) {
-			return BlockPathType::UNPASSABLE_RAIL;
 		}
 		return $pathType;
 	}

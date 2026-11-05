@@ -52,10 +52,13 @@ final class FlightAndSwimPathfindingTest extends PathfindingTestCase{
 	public function testFlightClassifiesWithoutASearch() : void{
 		$world = (new TestWorld())->fill(0, 63, 0, 1, 63, 0, VanillaBlocks::OAK_FENCE());
 		$resolver = new FlightPathTypeResolver();
-		$mobPosition = new Vector3(0.5, 64, 0.5);
+		$profile = new MovementProfile(0.6, 0.6);
+		$start = new Vector3(0.5, 64, 0.5);
 
-		self::assertSame(BlockPathType::FENCE, $resolver->getBlockPathType($world->getBlockGetter(), 1, 64, 0, $mobPosition));
-		self::assertSame(BlockPathType::OPEN, $resolver->getBlockPathType($world->getBlockGetter(), 0, 64, 0, $mobPosition), "the mob's own block");
+		self::assertSame(BlockPathType::FENCE, $resolver->getBlockPathType($world->getBlockGetter(), 1, 64, 0));
+		self::assertSame(BlockPathType::FENCE, $resolver->getPathType($world->getBlockGetter(), $profile, 1, 64, 0, $start));
+		self::assertSame(BlockPathType::FENCE, $resolver->getPathType($world->getBlockGetter(), $profile, 0, 64, 0, new Vector3(5.5, 64, 0.5)), "over a fence");
+		self::assertSame(BlockPathType::OPEN, $resolver->getPathType($world->getBlockGetter(), $profile, 0, 64, 0, $start), "the block the mob starts in");
 	}
 
 	/**

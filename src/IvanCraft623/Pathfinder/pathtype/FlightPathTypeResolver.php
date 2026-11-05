@@ -28,7 +28,7 @@ use IvanCraft623\Pathfinder\world\BlockGetter;
 use pocketmine\math\Vector3;
 
 class FlightPathTypeResolver extends PathTypeResolver{
-	public function getBlockPathType(BlockGetter $blockGetter, int $x, int $y, int $z, Vector3 $mobPosition) : BlockPathType{
+	public function getBlockPathType(BlockGetter $blockGetter, int $x, int $y, int $z) : BlockPathType{
 		$pathType = BlockClassifier::getRawType($blockGetter, $x, $y, $z);
 
 		if ($pathType === BlockPathType::OPEN && $y >= $blockGetter->minY + 1) {
@@ -41,11 +41,7 @@ class FlightPathTypeResolver extends PathTypeResolver{
 			} elseif ($pathTypeDown === BlockPathType::COCOA) {
 				$pathType = BlockPathType::COCOA;
 			} elseif ($pathTypeDown === BlockPathType::FENCE) {
-				// Only treat as FENCE if we are not standing at the mob's own position
-				$mobPos = $mobPosition->floor();
-				if ($x !== (int) $mobPos->x || $y !== (int) $mobPos->y || $z !== (int) $mobPos->z) {
-					$pathType = BlockPathType::FENCE;
-				}
+				$pathType = BlockPathType::FENCE;
 			} else {
 				$pathType = (
 					$pathTypeDown !== BlockPathType::WALKABLE &&
@@ -60,6 +56,19 @@ class FlightPathTypeResolver extends PathTypeResolver{
 		}
 
 		return $pathType;
+	}
+
+	/**
+	 * The block the mob starts in is not a fence for standing over one.
+	 */
+	protected function applyStart(BlockGetter $blockGetter, Vector3 $startBlock, int $x, int $y, int $z, BlockPathType $pathType) : BlockPathType{
+		if ($pathType === BlockPathType::FENCE &&
+			$x === $startBlock->getFloorX() && $y === $startBlock->getFloorY() && $z === $startBlock->getFloorZ() &&
+			BlockClassifier::getRawType($blockGetter, $x, $y, $z) === BlockPathType::OPEN
+		) {
+			return BlockClassifier::getNeighbourDanger($blockGetter, $x, $y, $z, BlockPathType::OPEN);
+		}
+		return parent::applyStart($blockGetter, $startBlock, $x, $y, $z, $pathType);
 	}
 
 	protected function getUnpassableTypes() : array{
