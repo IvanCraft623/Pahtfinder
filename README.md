@@ -201,7 +201,8 @@ $costMap = BlockPathTypeCostMap::amphibious()->merge($mobCostMap);
 | `NodeEvaluator` | Abstract base class — implement everything yourself. |
 | `WalkNodeEvaluator` | Land mobs. 4 cardinal + 4 diagonal neighbors with up-step/jump and fall checks; handles fences, doors, rails and water borders. |
 | `FlightNodeEvaluator` | Flying mobs. 6 cardinals + edges + corners; extra cost for flying close to the ground. |
-| `AmphibiousNodeEvaluator` | Mobs that walk on land and swim in 3D through water. Use with `BlockPathTypeCostMap::amphibious()` costs. |
+| `AmphibiousNodeEvaluator` | Mobs that walk on land and also swim through water, like axolotls. Use with `BlockPathTypeCostMap::amphibious()` costs. |
+| `SwimNodeEvaluator` | Mobs that can only move through water, like fish: land and air are blocked. Searches in 3D like the flight one. |
 
 Everything a `MovementProfile` takes:
 
@@ -226,7 +227,7 @@ $profile = new MovementProfile(
 An evaluator asks a `PathTypeResolver` what the blocks around it are: open,
 walkable, a fence, a closed door, water and so on (`BlockPathType`). Each
 evaluator comes with the resolver of its way of moving (`WalkPathTypeResolver`,
-`FlightPathTypeResolver`, `AmphibiousPathTypeResolver`) and takes another one in
+`FlightPathTypeResolver`, `AmphibiousPathTypeResolver`, `SwimPathTypeResolver`) and takes another one in
 its constructor.
 
 - `getBlockPathType(BlockGetter, x, y, z)` — the type of one block.
